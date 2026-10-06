@@ -89,11 +89,15 @@
     const labels = Object.create(null);
     const constants = Object.create(null);
     const statements = [];
+    const rejectedLabels = new Set(); // already reported; don't also flag each jump to them
 
     const checkNewName = (lineNo, id, what) => {
       if (!IDENT_RE.test(id)) { err(lineNo, `"${id}" is not a valid ${what} name (use letters, digits and _, not starting with a digit).`); return false; }
       if (REG_RE.test(id)) { err(lineNo, `"${id}" is a register and cannot be used as a ${what} name.`); return false; }
-      if (INSTRUCTION_MAP[id]) { err(lineNo, `"${id}" is an instruction and cannot be used as a ${what} name.`); return false; }
+      if (INSTRUCTION_MAP[id]) {
+        err(lineNo, `"${id}" is an instruction and cannot be used as a ${what} name. Try something like "${id.toLowerCase()}_${what === 'label' ? 'here' : 'value'}".`);
+        return false;
+      }
       if (labels[id] !== undefined || constants[id] !== undefined) {
         err(lineNo, `"${id}" is already defined.`); return false;
       }
@@ -111,6 +115,7 @@
       while ((m = /^([^\s:,\[\]]+)\s*:/.exec(text))) {
         const id = m[1].toUpperCase();
         if (checkNewName(lineNo, id, 'label')) labels[id] = statements.length;
+        else rejectedLabels.add(id);
         text = text.slice(m[0].length).trim();
       }
       if (!text) continue;
@@ -192,6 +197,7 @@
         if (labels[tok] !== undefined) return { k: 'imm', v: labels[tok] };
         const n = parseNumber(tok);
         if (n !== null) return { k: 'imm', v: n };
+        if (rejectedLabels.has(tok)) return null; // error already reported at the label
         if (constants[tok] !== undefined) {
           err(lineNo, `"${raw}" is a constant, not a label (names are case-insensitive).`);
           return null;

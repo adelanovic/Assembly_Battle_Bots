@@ -29,7 +29,72 @@
     { x: 180, y: 390, w: 20, h: 120 },
   ];
 
-  const blankScan = () => ({ dist: -1, angle: 0, x: 0, y: 0, heading: 0, speed: 0 });
+  /*
+   * Arena layouts. 'random' is generated from the match seed, so a seed
+   * always reproduces the same map.
+   */
+  const ARENAS = {
+    classic: { label: 'Classic', desc: 'The fixed default layout.' },
+    random: { label: 'Random', desc: 'Symmetric obstacles generated from the seed.' },
+    open: { label: 'Open', desc: 'No obstacles.' },
+  };
+
+  // Random-map rules. GAP > robot diameter keeps every corridor passable:
+  // inflating each obstacle by one robot radius leaves them disjoint and clear
+  // of the walls, so the free space a robot can drive through stays connected.
+  const GEN = {
+    GAP: 44,             // min clearance between obstacles, and to the walls
+    THICKNESS: 20,       // bars are this thick (bullets can't skip through)
+    MAX_COVERAGE: 0.11,  // max fraction of the arena covered
+    ATTEMPTS: 400,
+  };
+
+  function generateRandomObstacles(seed) {
+    const rng = G.makeRng((seed ^ 0x9E3779B9) >>> 0); // independent of the spawn RNG
+    const W = C.ARENA_W, H = C.ARENA_H;
+    const between = (lo, hi) => lo + Math.floor(rng() * (hi - lo + 1));
+    const rects = [];
+    let area = 0;
+
+    const fits = (r) => r.x >= GEN.GAP && r.y >= GEN.GAP &&
+      r.x + r.w <= W - GEN.GAP && r.y + r.h <= H - GEN.GAP &&
+      rects.every((o) => r.x >= o.x + o.w + GEN.GAP || o.x >= r.x + r.w + GEN.GAP ||
+                         r.y >= o.y + o.h + GEN.GAP || o.y >= r.y + r.h + GEN.GAP);
+    const add = (r) => { rects.push(r); area += r.w * r.h; };
+
+    // Optional centre piece (its own mirror image).
+    if (rng() < 0.5) {
+      const s = 2 * between(20, 45); // even, so it centres exactly
+      add({ x: (W - s) / 2, y: (H - s) / 2, w: s, h: s });
+    }
+
+    // Pairs mirrored through the centre: every obstacle has a twin.
+    const pairs = between(2, 4);
+    for (let made = 0, tries = 0; made < pairs && tries < GEN.ATTEMPTS; tries++) {
+      const kind = rng();
+      let w, h;
+      if (kind < 0.4) { w = between(80, 180); h = GEN.THICKNESS; }        // horizontal bar
+      else if (kind < 0.8) { w = GEN.THICKNESS; h = between(80, 160); }   // vertical bar
+      else { w = between(40, 80); h = between(40, 80); }                  // block
+      const r = { x: between(0, W - w), y: between(0, H - h), w, h };
+      const twin = { x: W - r.x - w, y: H - r.y - h, w, h };
+      if ((area + 2 * w * h) / (W * H) > GEN.MAX_COVERAGE) continue;
+      if (!fits(r)) continue;
+      add(r);
+      if (!fits(twin)) { rects.pop(); area -= w * h; continue; } // also rejects twin overlapping r
+      add(twin);
+      made++;
+    }
+    return rects;
+  }
+
+  function makeObstacles(arena, seed) {
+    if (arena === 'open') return [];
+    if (arena === 'random') return generateRandomObstacles(seed);
+    return DEFAULT_OBSTACLES.map((o) => ({ ...o }));
+  }
+
+  const blankScan =() => ({ dist: -1, angle: 0, x: 0, y: 0, heading: 0, speed: 0 });
   const blankThreat = () => ({ dist: -1, angle: 0, heading: 0 });
 
   class Robot {
@@ -61,12 +126,14 @@
      * @param {object} opts
      *   entries:   [{ id, name, program }] valid compiled robots
      *   seed:      integer RNG seed (spawn positions, RAND)
-     *   obstacles: optional array of rects
+     *   arena:     'classic' | 'random' | 'open'
+     *   obstacles: optional explicit array of rects (overrides `arena`)
      */
-    constructor({ entries, seed = 1, obstacles = DEFAULT_OBSTACLES }) {
+    constructor({ entries, seed = 1, arena = 'classic', obstacles = null }) {
       this.width = C.ARENA_W;
       this.height = C.ARENA_H;
-      this.obstacles = obstacles.map((o) => ({ ...o }));
+      this.arena = ARENAS[arena] ? arena : 'classic';
+      this.obstacles = obstacles ? obstacles.map((o) => ({ ...o })) : makeObstacles(this.arena, seed);
       this.seed = seed;
       this.rng = G.makeRng(seed);
       this.tick = 0;
@@ -90,7 +157,7 @@
       this.competitive = this.robots.length >= 2;
       this.spawnRobots();
       this.addLog(this.competitive
-        ? `Match started with ${this.robots.length} robots (seed ${seed}).`
+        ? `Match started with ${this.robots.length} robots (${ARENAS[this.arena].label} arena, seed ${seed}).`
         : 'Practice mode: add a second robot for a real match.');
     }
 
@@ -413,6 +480,8 @@
   }
 
   World.DEFAULT_OBSTACLES = DEFAULT_OBSTACLES;
+  World.ARENAS = ARENAS;
+  World.makeObstacles = makeObstacles;
   World.COLORS = COLORS;
   BB.World = World;
 })(globalThis.BB = globalThis.BB || {});

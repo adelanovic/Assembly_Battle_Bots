@@ -340,6 +340,30 @@ walls_done:
     RET
 `;
 
+  // Starting point for "+ New robot" (covered by the test suite).
+  const NEW_ROBOT_TEMPLATE = `NewBot
+; Line 1 is the robot's name. Write your program below.
+; Open the Reference tab for every instruction and sensor.
+
+main:
+    SCAN 30              ; look ahead of the turret
+    GET  R0, SCAN_DIST
+    CMP  R0, 0
+    JL   sweep           ; nobody there
+    GET  R1, SCAN_ANGLE
+    AIM  R1
+    FIRE
+    WAIT
+    JMP  main
+sweep:
+    GET  R1, TURRET
+    ADD  R1, 20
+    AIM  R1
+    WAIT
+`;
+
+  BB.NEW_ROBOT_TEMPLATE = NEW_ROBOT_TEMPLATE;
+
   BB.EXAMPLES = [
     { file: 'sentinel.asm', source: SENTINEL, blurb: 'Stationary sniper: leads targets, sidesteps bullets.' },
     { file: 'hunter.asm', source: HUNTER, blurb: 'Aggressive chaser: charges and fires point-blank.' },

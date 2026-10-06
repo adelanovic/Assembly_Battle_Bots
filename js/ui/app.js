@@ -19,27 +19,6 @@
   const DEFAULT_SPEED = 3;
   const MAX_STEPS_PER_FRAME = 200;
 
-  const NEW_ROBOT = `NewBot
-; Line 1 is the robot's name. Write your program below.
-; Open the Reference tab for every instruction and sensor.
-
-main:
-    SCAN 30              ; look ahead of the turret
-    GET  R0, SCAN_DIST
-    CMP  R0, 0
-    JL   turn            ; nobody there
-    GET  R1, SCAN_ANGLE
-    AIM  R1
-    FIRE
-    WAIT
-    JMP  main
-turn:
-    GET  R1, TURRET
-    ADD  R1, 20
-    AIM  R1
-    WAIT
-`;
-
   const $ = (sel) => document.querySelector(sel);
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -115,6 +94,7 @@ turn:
       this.world = new BB.World({
         entries: valid.map((e) => ({ id: e.id, name: e.compiled.name, program: e.compiled.program })),
         seed,
+        arena: $('#arena-type').value,
       });
       this.renderer.effects = [];
       const skipped = this.entries.length - valid.length;
@@ -366,7 +346,7 @@ turn:
       html += '</table><h3>Sensors: <code>GET dst, NAME</code></h3><table class="ref">' +
         SENSORS.map((s) => `<tr><td><code>${s.name}</code></td><td>${esc(s.desc)}</td></tr>`).join('') + '</table>';
       html += '<h3>Arena rules</h3><table class="ref">' + [
-        ['Arena', `${C.ARENA_W} × ${C.ARENA_H}, robot radius ${C.ROBOT_RADIUS}`],
+        ['Arena', `${C.ARENA_W} × ${C.ARENA_H}, robot radius ${C.ROBOT_RADIUS}. Layout: Classic, Open, or Random (mirrored obstacles generated from the seed). Don't hard-code obstacle positions; use FRONT and SCAN.`],
         ['Budget', `${C.CYCLES_PER_TICK} cycles per robot per tick`],
         ['Movement', `speed ${C.MAX_REVERSE}..${C.MAX_SPEED}, acceleration ${C.ACCELERATION}/tick, body turns ${C.BODY_TURN_RATE}°/tick, turret ${C.TURRET_TURN_RATE}°/tick`],
         ['Weapons', `bullet speed ${C.BULLET_SPEED}, damage ${C.BULLET_DAMAGE}, cooldown ${C.FIRE_COOLDOWN} ticks`],
@@ -396,6 +376,7 @@ turn:
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
           seed: $('#seed').value,
+          arena: $('#arena-type').value,
           entries: this.entries.map((e) => ({ filename: e.filename, source: e.source, draft: e.draft })),
         }));
       } catch (_) { /* storage unavailable: nothing to do */ }
@@ -406,6 +387,7 @@ turn:
       try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (_) { saved = null; }
       if (saved && Array.isArray(saved.entries) && saved.entries.length) {
         if (saved.seed) $('#seed').value = saved.seed;
+        if (BB.World.ARENAS[saved.arena]) $('#arena-type').value = saved.arena;
         for (const e of saved.entries) this.addEntry(e.filename, e.source, { select: false, draft: e.draft });
       } else {
         for (const ex of BB.EXAMPLES) this.addEntry(ex.file, ex.source, { select: false });
@@ -421,6 +403,10 @@ turn:
       $('#btn-reset').onclick = () => this.resetMatch();
       $('#btn-dice').onclick = () => { $('#seed').value = 1 + Math.floor(Math.random() * 99999); this.persist(); this.resetMatch(); };
       $('#seed').onchange = () => { this.persist(); this.resetMatch(); };
+      const arenaSel = $('#arena-type');
+      arenaSel.innerHTML = Object.entries(BB.World.ARENAS)
+        .map(([key, a]) => `<option value="${key}" title="${esc(a.desc)}">${esc(a.label)}</option>`).join('');
+      arenaSel.onchange = () => { this.persist(); this.resetMatch(); };
 
       const speed = $('#speed');
       speed.max = SPEEDS.length - 1;
@@ -434,7 +420,7 @@ turn:
 
       $('#show-scans').onchange = (ev) => { this.renderer.showScans = ev.target.checked; };
 
-      $('#btn-new').onclick = () => { this.addEntry('newbot.asm', NEW_ROBOT); this.persist(); this.resetMatch(); this.editor.focus(); };
+      $('#btn-new').onclick = () => { this.addEntry('newbot.asm', BB.NEW_ROBOT_TEMPLATE); this.persist(); this.resetMatch(); this.editor.focus(); };
       $('#btn-load').onclick = () => $('#file-input').click();
       $('#file-input').onchange = (ev) => { this.loadFiles(ev.target.files); ev.target.value = ''; };
 

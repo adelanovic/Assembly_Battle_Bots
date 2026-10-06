@@ -20,6 +20,7 @@ npm test              # assembler, VM and simulation tests
 npm run match         # one headless match between the examples, printed to the terminal
 npm run tournament    # 50 seeds, win counts per robot
 node tools/headless.js --seed 7 my_bot.asm examples/hunter.asm
+node tools/headless.js --rounds 50 --arena random my_bot.asm examples/*.asm   # test across 50 random maps
 npm run build         # regenerate examples/*.asm and docs/LANGUAGE.md from the JS sources
 ```
 
@@ -30,6 +31,7 @@ npm run build         # regenerate examples/*.asm and docs/LANGUAGE.md from the 
 | **▶ Start / ❚❚ Pause** (Space) | Run or pause the match. |
 | **⏭ Step** (`.`) | Advance exactly one tick. The CPU inspector and the yellow gutter marker show the next line each robot will execute. |
 | **↺ Reset** (`R`) | Respawn every robot with its *applied* code. The seed decides spawn points and `RAND`, so a seed always replays the same match. |
+| **Arena** | **Classic** is the fixed default layout. **Random** generates a mirrored obstacle layout from the seed, so 🎲 gives a new map and the same seed always gives the same map. **Open** has no obstacles, which is useful for testing aim and dodging. |
 | **Speed** | 0.1× to 60× (6 to 3600 ticks per second). |
 | **+ New robot / 📂 Load .asm files… / + Add example** | Add robots. Loading accepts several files at once, and you can also drag and drop `.asm` files onto the page. **Each file becomes one robot.** |
 | **Editor → Apply** (Ctrl+Enter) | Assemble the code and use it. Before the match starts, the arena resets. During a match, the robot hot-swaps to the new program without losing its position or health. |
@@ -82,7 +84,15 @@ There is no "dodge" instruction. Robots dodge by calling `RADAR` to find an inco
 
 ## Rules of the arena
 
-- 800×600 arena with five rectangular obstacles that block movement, bullets and scans.
+- 800×600 arena. Rectangular obstacles block movement, bullets and scans.
+- Arena layouts:
+  - **Classic:** five fixed obstacles.
+  - **Open:** none.
+  - **Random:** 4 to 9 obstacles generated from the seed, with these guarantees:
+    - **Fair:** every obstacle has a twin mirrored through the arena centre.
+    - **Passable:** obstacles keep a 44-unit gap from each other and the walls, wider than a robot, so every open area can be reached.
+    - **Solid:** obstacles are at least 20 units thick, so bullets can't pass through.
+    - **Open enough:** obstacles cover at most 11% of the arena.
 - Each tick, every living robot gets **the same 50-cycle budget** (SCAN and RADAR cost 3, everything else costs 1). The order robots run in rotates every tick, and the world is frozen while programs run, so order gives no advantage.
 - Movement is physical. Speed is −3 to 5, acceleration 0.5 per tick, the body turns up to 8° per tick and the turret up to 20° per tick.
 - Bullets travel 10 units per tick and deal 10 damage, with a 15-tick cooldown between shots. Hitting a wall at speed deals speed/2 damage. Ramming deals 1 damage to both robots.

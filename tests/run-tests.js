@@ -71,6 +71,15 @@ test('multiple errors are all reported', () => {
 test('every example assembles cleanly', () => {
   for (const ex of BB.EXAMPLES) assert.deepStrictEqual(errorsOf(ex.source), [], ex.file);
 });
+test('the "+ New robot" template assembles cleanly', () => {
+  assert.deepStrictEqual(errorsOf(BB.NEW_ROBOT_TEMPLATE), []);
+});
+test('a label named after an instruction is one error, not one per jump', () => {
+  const e = errorsOf('Bot\nJMP turn\nJL turn\nturn: NOP');
+  assert.strictEqual(e.length, 1);
+  assert.strictEqual(e[0].line, 4);
+  assert.match(e[0].message, /is an instruction/);
+});
 
 console.log('VM');
 test('arithmetic, constants and memory', () => {
@@ -213,6 +222,76 @@ test('example free-for-all always terminates with a result', () => {
     assert.ok(w.tick <= BB.CONFIG.MAX_TICKS);
     for (const r of w.robots) assert.strictEqual(r.vm.fault, null, `${r.name} faulted: ${r.vm.fault}`);
   }
+});
+
+console.log('Arenas');
+const SEEDS = Array.from({ length: 500 }, (_, i) => i + 1);
+const randomMap = (seed) => BB.World.makeObstacles('random', seed);
+test('random arenas are reproducible from the seed and vary between seeds', () => {
+  assert.deepStrictEqual(randomMap(7), randomMap(7));
+  const distinct = new Set(SEEDS.slice(0, 50).map((s) => JSON.stringify(randomMap(s))));
+  assert.ok(distinct.size > 45, `only ${distinct.size} distinct maps`);
+});
+test('random arenas are point-symmetric (every obstacle has a mirrored twin)', () => {
+  const { ARENA_W: W, ARENA_H: H } = BB.CONFIG;
+  for (const s of SEEDS) {
+    const m = randomMap(s);
+    assert.ok(m.length >= 4, `seed ${s}: only ${m.length} obstacles`);
+    for (const o of m) {
+      assert.ok(m.some((t) => t.x === W - o.x - o.w && t.y === H - o.y - o.h && t.w === o.w && t.h === o.h), `seed ${s}: no twin`);
+    }
+  }
+});
+test('random arenas respect thickness and coverage limits', () => {
+  const { ARENA_W: W, ARENA_H: H } = BB.CONFIG;
+  for (const s of SEEDS) {
+    const m = randomMap(s);
+    for (const o of m) assert.ok(o.w >= 20 && o.h >= 20, `seed ${s}: thin obstacle`);
+    const area = m.reduce((a, o) => a + o.w * o.h, 0);
+    assert.ok(area / (W * H) <= 0.11, `seed ${s}: coverage ${area / (W * H)}`);
+  }
+});
+test('random arenas have no sealed-off areas (flood fill of robot positions)', () => {
+  const { ARENA_W: W, ARENA_H: H, ROBOT_RADIUS: R } = BB.CONFIG;
+  const STEP = 4;
+  const cols = Math.floor(W / STEP), rows = Math.floor(H / STEP);
+  for (const s of SEEDS) {
+    const m = randomMap(s);
+    const free = new Uint8Array(cols * rows);
+    let total = 0, start = -1;
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+      const x = i * STEP + STEP / 2, y = j * STEP + STEP / 2;
+      if (x < R || y < R || x > W - R || y > H - R) continue;
+      if (m.some((o) => BB.geo.circleRectPush(x, y, R, o))) continue;
+      free[j * cols + i] = 1; total++;
+      if (start < 0) start = j * cols + i;
+    }
+    const seen = new Uint8Array(cols * rows);
+    const queue = [start]; seen[start] = 1;
+    let reached = 0;
+    while (queue.length) {
+      const c = queue.pop(); reached++;
+      const i = c % cols, j = (c - i) / cols;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const ni = i + di, nj = j + dj, n = nj * cols + ni;
+        if (ni >= 0 && nj >= 0 && ni < cols && nj < rows && free[n] && !seen[n]) { seen[n] = 1; queue.push(n); }
+      }
+    }
+    assert.strictEqual(reached, total, `seed ${s}: ${total - reached} unreachable cells`);
+  }
+});
+test('robots spawn clear of obstacles on random arenas', () => {
+  const entries = BB.EXAMPLES.map((e, i) => compile(e.source, i));
+  for (const s of SEEDS.slice(0, 100)) {
+    const w = new BB.World({ entries, seed: s, arena: 'random' });
+    for (const r of w.robots) {
+      assert.ok(w.obstacles.every((o) => !BB.geo.circleRectPush(r.x, r.y, BB.CONFIG.ROBOT_RADIUS, o)), `seed ${s}: ${r.name} spawned in an obstacle`);
+    }
+  }
+});
+test('open arena has no obstacles, classic is unchanged', () => {
+  assert.strictEqual(BB.World.makeObstacles('open', 1).length, 0);
+  assert.deepStrictEqual(BB.World.makeObstacles('classic', 99), BB.World.DEFAULT_OBSTACLES);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
