@@ -216,14 +216,14 @@
       // motion streaks behind the direction of travel
       if (Math.abs(r.speed) > 1.5) {
         const dir = Math.sign(r.speed);
-        const len = Math.abs(r.speed) * 3.5;
-        ctx.strokeStyle = hexA(r.color, 0.28);
-        ctx.lineWidth = 2;
+        const x0 = -dir * (R - 1), x1 = -dir * (R - 1 + Math.abs(r.speed) * 2.5);
+        const g = ctx.createLinearGradient(x0, 0, x1, 0);
+        g.addColorStop(0, hexA(r.color, 0.3));
+        g.addColorStop(1, hexA(r.color, 0));
+        ctx.strokeStyle = g;
+        ctx.lineWidth = TREAD.outer - TREAD.inner - 1;
         ctx.beginPath();
-        for (const y of [-11, 0, 11]) {
-          ctx.moveTo(-dir * (R + 2), y);
-          ctx.lineTo(-dir * (R + 2 + len * (y === 0 ? 0.6 : 1)), y);
-        }
+        for (const y of [-11, 11]) { ctx.moveTo(x0, y); ctx.lineTo(x1, y); }
         ctx.stroke();
       }
 
@@ -283,24 +283,24 @@
         const s = 4 + f.muzzle * 2;
         ctx.fillStyle = `rgba(255,236,170,${f.muzzle / 4})`;
         ctx.beginPath();
-        ctx.moveTo(R + 9, 0);
-        ctx.lineTo(R + 11 + s, -s * 0.55); ctx.lineTo(R + 13 + s * 1.4, 0); ctx.lineTo(R + 11 + s, s * 0.55);
+        ctx.moveTo(R + 5, 0);
+        ctx.lineTo(R + 7 + s, -s * 0.55); ctx.lineTo(R + 9 + s * 1.4, 0); ctx.lineTo(R + 7 + s, s * 0.55);
         ctx.closePath(); ctx.fill();
       }
       ctx.fillStyle = '#cdd4df';
       ctx.strokeStyle = '#0b0d12';
       ctx.lineWidth = 1.2;
-      roundRect(ctx, 2, -2.5, R + 8, 5, 1.5);
+      roundRect(ctx, 2, -2, R + 3, 4, 1.5);
       ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#9aa3b2';
-      ctx.fillRect(R + 6, -3, 4, 6); // muzzle brake
-      const dome = ctx.createRadialGradient(-2, -2, 1, 0, 0, 8);
-      dome.addColorStop(0, '#ffffff');
-      dome.addColorStop(1, '#aeb6c4');
+      ctx.fillStyle = '#8e97a6';
+      ctx.fillRect(R + 1, -2.5, 4, 5); // muzzle brake
+      const dome = ctx.createRadialGradient(-1.5, -1.5, 0.5, 0, 0, 6.5);
+      dome.addColorStop(0, shade(r.color, 0.7));
+      dome.addColorStop(1, shade(r.color, 0.15));
       ctx.fillStyle = dome;
-      ctx.beginPath(); ctx.arc(0, 0, 7.5, 0, TAU); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = r.color;
-      ctx.beginPath(); ctx.arc(0, 0, 3, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 0, 6, 0, TAU); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(11,13,18,0.55)'; // hatch
+      ctx.beginPath(); ctx.arc(-1, 0, 1.8, 0, TAU); ctx.fill();
 
       ctx.restore();
     }
@@ -308,7 +308,7 @@
     drawLabel(ctx, r, now) {
       const R = C.ROBOT_RADIUS;
       const hp = Math.max(0, r.health / C.MAX_HEALTH);
-      const w = 40, bx = r.x - w / 2, by = r.y - R - 13;
+      const w = 40, bx = r.x - w / 2, by = r.y - R - 15;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       roundRect(ctx, bx - 1, by - 1, w + 2, 6, 2);
       ctx.fill();
@@ -397,15 +397,22 @@
             break;
           case 'smoke':
             p.x += p.vx; p.y += p.vy;
-            ctx.globalAlpha = 0.32 * (1 - t);
+            ctx.globalAlpha = 0.45 * (1 - t);
             ctx.fillStyle = '#8b93a1';
             ctx.beginPath(); ctx.arc(p.x, p.y, p.size + t * 9, 0, TAU); ctx.fill();
             break;
-          case 'flash':
-            ctx.globalAlpha = 1 - t;
-            ctx.fillStyle = p.color;
-            ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.6 + t * 0.6), 0, TAU); ctx.fill();
+          case 'flash': {
+            const rad = p.size * (0.6 + t * 0.6);
+            const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad);
+            g.addColorStop(0, '#ffffff');
+            g.addColorStop(0.35, p.color);
+            g.addColorStop(0.7, 'rgba(255,120,40,0.55)');
+            g.addColorStop(1, 'rgba(255,80,20,0)');
+            ctx.globalAlpha = 1 - t * t;
+            ctx.fillStyle = g;
+            ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, TAU); ctx.fill();
             break;
+          }
           case 'ring':
             ctx.globalAlpha = 0.7 * (1 - t);
             ctx.strokeStyle = p.color;
