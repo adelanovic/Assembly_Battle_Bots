@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Battle Bots</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="toolbar">
+    <h1>⚙ Battle Bots</h1>
+    <div class="group">
+      <button id="btn-run" class="primary" title="Start / pause (Space)">▶ Start</button>
+      <button id="btn-step" title="Advance one tick (.)">⏭ Step</button>
+      <button id="btn-reset" title="Respawn all robots with their applied code (R)">↺ Reset</button>
+    </div>
+    <div class="group">
+      <label for="speed">Speed</label>
+      <input id="speed" type="range" min="0" step="1">
+      <span id="speed-label" class="mono"></span>
+    </div>
+    <div class="group">
+      <label for="seed">Seed</label>
+      <input id="seed" type="number" value="1" min="1" class="seed">
+      <button id="btn-dice" title="Random seed">🎲</button>
+    </div>
+    <div class="group">
+      <label><input id="show-scans" type="checkbox" checked> Show scans</label>
+    </div>
+    <div class="group grow"></div>
+    <div class="group stat">Tick <b id="tick" class="mono">0</b></div>
+    <div class="group stat"><b id="status">Ready</b></div>
+  </header>
+
+  <main>
+    <section class="left">
+      <div class="arena-wrap">
+        <canvas id="arena" width="800" height="600"></canvas>
+      </div>
+      <div class="roster-bar">
+        <h2>Robots</h2>
+        <button id="btn-new">+ New robot</button>
+        <button id="btn-load">📂 Load .asm files…</button>
+        <input id="file-input" type="file" accept=".asm,.txt,text/plain" multiple hidden>
+        <select id="example-select"></select>
+      </div>
+      <div id="roster" class="roster"></div>
+    </section>
+
+    <section class="right">
+      <nav class="tabs">
+        <button data-tab="editor" class="active">Editor</button>
+        <button data-tab="reference">Reference</button>
+        <button data-tab="log">Match log</button>
+      </nav>
+
+      <div id="tab-editor" class="tab-panel">
+        <div id="editor-pane">
+          <div class="editor-head">
+            <div class="editor-title"><b id="editor-name"></b> <span id="editor-file" class="muted mono"></span></div>
+            <button id="btn-revert" title="Discard unapplied edits">Revert</button>
+            <button id="btn-save" title="Download as .asm (Ctrl+S)">💾 Save .asm</button>
+            <button id="btn-apply" class="primary" title="Assemble and use this code (Ctrl+Enter)">Apply</button>
+          </div>
+          <div id="editor"></div>
+          <ul id="errors" class="errors"></ul>
+          <h4>CPU inspector</h4>
+          <div id="debug" class="debug"></div>
+          <div class="empty-msg">Select or create a robot to edit its program.</div>
+        </div>
+      </div>
+
+      <div id="tab-reference" class="tab-panel" hidden>
+        <div id="reference" class="reference"></div>
+      </div>
+
+      <div id="tab-log" class="tab-panel" hidden>
+        <ul id="log" class="log"></ul>
+      </div>
+    </section>
+  </main>
+
+  <div id="flash" class="flash"></div>
+  <div class="drop-hint">Drop .asm files to add robots</div>
+
+  <!-- Core: no DOM access, also runs in Node (see tools/ and tests/) -->
+  <script src="js/core/isa.js"></script>
+  <script src="js/core/geometry.js"></script>
+  <script src="js/core/assembler.js"></script>
+  <script src="js/core/vm.js"></script>
+  <script src="js/core/world.js"></script>
+  <script src="js/core/examples.js"></script>
+  <!-- UI -->
+  <script src="js/ui/renderer.js"></script>
+  <script src="js/ui/editor.js"></script>
+  <script src="js/ui/app.js"></script>
+</body>
+</html>

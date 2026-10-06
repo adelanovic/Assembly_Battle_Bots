@@ -1,0 +1,13 @@
+{
+  "name": "battle-bots",
+  "version": "1.0.0",
+  "description": "Program robots in assembly and watch them fight in a 2D arena.",
+  "private": true,
+  "scripts": {
+    "test": "node tests/run-tests.js",
+    "build": "node tools/build.js",
+    "match": "node tools/headless.js examples/sentinel.asm examples/hunter.asm examples/dodger.asm examples/orbiter.asm",
+    "tournament": "node tools/headless.js --rounds 50 examples/sentinel.asm examples/hunter.asm examples/dodger.asm examples/orbiter.asm"
+  },
+  "license": "MIT"
+}
