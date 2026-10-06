@@ -1,0 +1,14 @@
+# Dependencies / tooling
+node_modules/
+npm-debug.log*
+
+# OS and editor clutter
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# Private robots (kept out of the public repo)
+terminator.asm
