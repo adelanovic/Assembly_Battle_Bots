@@ -29,7 +29,7 @@
       <button id="btn-dice" title="Random seed">🎲</button>
     </div>
     <div class="group">
-      <label><input id="show-scans" type="checkbox" checked> Show scans</label>
+      <label title="Draw each robot's scan cone"><input id="show-scans" type="checkbox" checked> Scans</label>
     </div>
     <div class="group grow"></div>
     <div class="group stat">Tick <b id="tick" class="mono">0</b></div>
@@ -68,8 +68,10 @@
           </div>
           <div id="editor"></div>
           <ul id="errors" class="errors"></ul>
-          <h4>CPU inspector</h4>
-          <div id="debug" class="debug"></div>
+          <details class="inspector" open>
+            <summary>CPU inspector</summary>
+            <div id="debug" class="debug"></div>
+          </details>
           <div class="empty-msg">Select or create a robot to edit its program.</div>
         </div>
       </div>

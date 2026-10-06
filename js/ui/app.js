@@ -35,6 +35,7 @@
       this.renderedLogKey = null;
 
       this.renderer = new BB.Renderer($('#arena'));
+      this.fitArena();
       this.editor = new BB.CodeEditor($('#editor'));
 
       this.bindControls();
@@ -96,7 +97,7 @@
         seed,
         arena: $('#arena-type').value,
       });
-      this.renderer.effects = [];
+      this.renderer.clearEffects();
       const skipped = this.entries.length - valid.length;
       if (skipped) this.world.addLog(`${skipped} robot(s) skipped because of syntax errors.`, 'fault');
       this.renderRoster();
@@ -131,6 +132,22 @@
       }
       if (performance.now() - this.lastPanelUpdate > 100) this.updatePanels(false);
       requestAnimationFrame(() => this.frame());
+    }
+
+    /** Keep the canvas as large as its container allows, at 4:3. */
+    fitArena() {
+      const wrap = $('.arena-wrap');
+      const fit = () => {
+        const w = wrap.clientWidth, h = wrap.clientHeight;
+        const cssW = Math.max(200, Math.floor(Math.min(w, h * C.ARENA_W / C.ARENA_H)));
+        if (cssW !== this.arenaCssWidth) {
+          this.arenaCssWidth = cssW;
+          this.renderer.resize(cssW);
+        }
+      };
+      if (window.ResizeObserver) new ResizeObserver(fit).observe(wrap);
+      window.addEventListener('resize', fit);
+      fit();
     }
 
     // ------------------------------------------------------------ editor
@@ -413,7 +430,8 @@
       speed.value = this.speedIndex;
       const showSpeed = () => {
         const s = SPEEDS[this.speedIndex];
-        $('#speed-label').textContent = `${s}× (${Math.round(s * 60)} ticks/s)`;
+        $('#speed-label').textContent = `${s}× · ${Math.round(s * 60)}/s`;
+        speed.title = `${s} ticks per frame, about ${Math.round(s * 60)} ticks per second`;
       };
       speed.oninput = () => { this.speedIndex = Number(speed.value); showSpeed(); };
       showSpeed();
@@ -470,12 +488,19 @@
       for (const b of document.querySelectorAll('.tabs button')) b.onclick = () => this.showTab(b.dataset.tab);
 
       document.addEventListener('keydown', (ev) => {
-        const inField = /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement && document.activeElement.tagName);
+        // A focused button handles Space/Enter natively, so the shortcuts would fire twice.
+        const inField = /^(TEXTAREA|INPUT|SELECT|BUTTON|SUMMARY)$/.test(document.activeElement && document.activeElement.tagName);
         if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') { ev.preventDefault(); this.applyDraft(); }
         else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); this.saveFile(); }
         else if (!inField && ev.key === ' ') { ev.preventDefault(); this.toggleRun(); }
         else if (!inField && ev.key === '.') { this.stepOnce(); }
         else if (!inField && ev.key.toLowerCase() === 'r') { this.resetMatch(); }
+      });
+
+      // Mouse clicks shouldn't leave buttons focused, so Space keeps meaning start/pause.
+      document.addEventListener('click', (ev) => {
+        const b = ev.target.closest('button');
+        if (b && ev.detail > 0) b.blur();
       });
 
       // Drag & drop .asm files anywhere on the page.

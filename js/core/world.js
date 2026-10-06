@@ -436,7 +436,7 @@
               const shooter = this.robots[p.owner];
               shooter.stats.hits++;
               this.damage(r, C.BULLET_DAMAGE, shooter, 'shot');
-              this.emit({ type: 'hit', x: p.x, y: p.y, color: r.color });
+              this.emit({ type: 'hit', x: p.x, y: p.y, color: r.color, robot: r.id });
               continue outer;
             }
           }
