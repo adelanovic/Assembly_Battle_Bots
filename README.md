@@ -25,6 +25,7 @@ node tools/headless.js --seed 7 my_bot.asm examples/hunter.asm
 node tools/headless.js --rounds 50 --arena random my_bot.asm examples/*.asm   # test across 50 random maps
 node tools/headless.js --teams 2 a.asm b.asm c.asm d.asm   # 2v2: first two files are team A, the rest team B
 npm run build         # regenerate examples/*.asm and docs/LANGUAGE.md from the JS sources
+node tools/balance.js 20 > docs/balance-results.json  # compare arenas, bot constants and rules
 ```
 
 ## Using the sandbox
@@ -44,6 +45,8 @@ npm run build         # regenerate examples/*.asm and docs/LANGUAGE.md from the 
 | **Revert** | Discard edits you have not applied. |
 
 The editor checks your code as you type. Errors appear under the editor and in the line gutter, and clicking an error jumps to that line. Robots with syntax errors stay in the roster but are left out of the arena until fixed. The **CPU inspector** under the editor shows the selected robot's registers and sensors live. Click its heading to collapse it and give the editor more room.
+
+Apply rejects drafts with syntax errors and keeps the robot's previously applied program. The draft remains in the editor so you can fix it. Single-robot command-line practice runs stop after 6000 ticks and report a practice result; browser practice mode continues until paused.
 
 The roster, seed and arena choice are saved in your browser's `localStorage`. Keyboard shortcuts (Space, `.`, `R`) are ignored while you're typing in the editor or a form field.
 
@@ -133,6 +136,37 @@ Out-of-range values are clamped without an error, so `SPEED 100` gives 5 and `SC
 
 There's no limit on the number of robots in a match or on program length. Colours repeat after 8 robots, and a very crowded arena spawns extra robots at a fallback point. All values live in `CONFIG` in `js/core/isa.js`.
 
+## How the virtual CPU works
+
+Each robot runs its assembly program on a small virtual CPU implemented in JavaScript. Pressing **Apply** assembles the source into instructions: labels become instruction positions, constants become numbers, and operands are checked against the language rules. Each instruction keeps its source line so errors and the CPU inspector can point back to your code.
+
+Each CPU owns 8 registers (`R0`–`R7`), 256 memory words, a 64-entry stack shared by data and subroutine calls, a program counter pointing to the next instruction, and the result of the last `CMP`. Registers and memory start at zero. Values use signed 32-bit integers and wrap on overflow.
+
+Every simulation tick, each living robot gets **up to 50 CPU cycles**. Most instructions cost 1 cycle; `SCAN` and `RADAR` cost 3. `WAIT` ends the CPU's turn and discards unused cycles. When the budget runs out, execution resumes at the next pending instruction on the following tick. Running past the end of the program wraps to its first instruction; `HALT` stops the CPU until reset or program reload.
+
+For example, this robot scans for an enemy and requests movement toward it:
+
+```asm
+Chaser
+main:
+    SCAN 60
+    GET  R0, SCAN_DIST
+    CMP  R0, 0
+    JL   idle
+    GET  R1, SCAN_ANGLE
+    HEAD R1
+    SPEED 5
+idle:
+    WAIT
+    JMP  main
+```
+
+`SCAN_DIST` is −1 when no enemy is found, so `JL idle` skips the movement commands in that case. Otherwise, `HEAD` sets a desired body heading and `SPEED` sets a desired speed. Existing movement commands persist, so losing sight of an enemy does not stop this robot automatically.
+
+Commands request actions rather than instantly changing the body. All CPUs run before physical movement; then the world applies turning, acceleration, movement, collisions, requested shots, and projectile motion. This gives every CPU the same physical state to inspect during a tick. `SCAN` and `RADAR` update their result sensors immediately, while a command such as `AIM` takes effect during the later physical update. Even a halted or faulted CPU leaves its body following its last movement and aiming commands.
+
+See [docs/LANGUAGE.md](docs/LANGUAGE.md) for instruction details, sensor behavior, and execution order.
+
 ## Safety: bad code can't break the arena
 
 - **Infinite loops:** the VM stops after the robot's cycle budget each tick and resumes on the next tick, so a `loop: JMP loop` only wastes its own robot's time.
@@ -144,6 +178,8 @@ There's no limit on the number of robots in a match or on program length. Colour
 Robot files you don't want published, such as competition entries, can stay in the folder: just list them in `.gitignore`. They still load in your local copy through **📂 Load .asm files…**, but they're never committed or served from GitHub Pages.
 
 ## Architecture
+
+See [docs/REVIEW_AND_BALANCE.md](docs/REVIEW_AND_BALANCE.md) for the second review, adjustable-parameter interactions, and seeded balance measurements. The reusable `tools/balance.js` experiment changes rules only in its own process.
 
 ```
 index.html            page layout; loads scripts in order (no bundler, works from file://)

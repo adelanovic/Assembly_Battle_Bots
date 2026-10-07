@@ -360,5 +360,267 @@ test('a team match with only one team is practice mode', () => {
   assert.strictEqual(w.over, false);
 });
 
+console.log('Regression checks');
+test('constants enforce signed 32-bit limits for every directive', () => {
+  for (const directive of ['.def', '.const', '.equ']) {
+    for (const value of ['2147483648', '-2147483649', '0x100000000', '9'.repeat(400)]) {
+      const errors = errorsOf(`T\n${directive} K ${value}\nMOV R0, K`);
+      assert.ok(errors.some((e) => e.line === 2 && /32 bits/.test(e.message)), `${directive} ${value}`);
+    }
+    const vm = runVM(`T\n${directive} LOW -2147483648\n${directive} HIGH 2147483647\nMOV R0, LOW\nMOV R1, HIGH\nCMP R1, HIGH\nHALT`);
+    assert.deepStrictEqual([...vm.regs.slice(0, 2)], [-2147483648, 2147483647]);
+    assert.strictEqual(vm.cmp, 0);
+  }
+});
+
+test('robot separation keeps bodies inside all four arena walls', () => {
+  const R = BB.CONFIG.ROBOT_RADIUS;
+  for (const positions of [
+    [[R, 300], [R + 24, 300]],
+    [[800 - R, 300], [800 - R - 24, 300]],
+    [[400, R], [400, R + 24]],
+    [[400, 600 - R], [400, 600 - R - 24]],
+  ]) {
+    const w = new BB.World({ entries: [compile('A\nWAIT', 0), compile('B\nWAIT', 1)], arena: 'open' });
+    w.robots.forEach((r, i) => Object.assign(r, { x: positions[i][0], y: positions[i][1] }));
+    for (let tick = 0; tick < 10; tick++) {
+      w.step();
+      for (const r of w.robots) {
+        assert.ok(r.x >= R && r.x <= w.width - R, `x=${r.x}`);
+        assert.ok(r.y >= R && r.y <= w.height - R, `y=${r.y}`);
+      }
+    }
+  }
+});
+
+test('robot separation cannot push a body into an obstacle', () => {
+  const obstacle = { x: 100, y: 200, w: 20, h: 100 };
+  const w = new BB.World({ entries: [compile('A\nWAIT', 0), compile('B\nWAIT', 1)], obstacles: [obstacle] });
+  Object.assign(w.robots[0], { x: 136, y: 250 });
+  Object.assign(w.robots[1], { x: 160, y: 250 });
+  for (let tick = 0; tick < 10; tick++) {
+    w.step();
+    for (const r of w.robots) assert.strictEqual(BB.geo.circleRectPush(r.x, r.y, BB.CONFIG.ROBOT_RADIUS, obstacle), null);
+  }
+});
+
+test('single-robot CLI runs and tournaments terminate with practice results', () => {
+  const { spawnSync } = require('child_process');
+  const path = require('path');
+  for (const rounds of [1, 2]) {
+    const result = spawnSync(process.execPath, ['tools/headless.js', '--rounds', String(rounds), 'examples/sentinel.asm'], {
+      cwd: path.join(__dirname, '..'), encoding: 'utf8', timeout: 10000,
+    });
+    assert.ifError(result.error);
+    assert.strictEqual(result.status, 0, result.stderr);
+    if (rounds === 1) assert.match(result.stdout, /\[\s*6000\] Practice run finished/);
+    else assert.match(result.stdout, /\(practice\)\s+2/);
+    assert.doesNotMatch(result.stdout, /\(draw\)/);
+  }
+});
+
+// Exercise UI controller methods with DOM/storage stubs, without rendering.
+const fs = require('fs');
+const path = require('path');
+const scriptVm = require('vm');
+const uiBB = { ...BB };
+// Capture the controller rather than booting the page and animation loop.
+scriptVm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/ui/app.js'), 'utf8').replace('BB.app = new App();', 'BB.App = App;'), {
+  BB: uiBB,
+  window: { addEventListener(event, callback) { if (event === 'DOMContentLoaded') callback(); } },
+  requestAnimationFrame() {},
+  performance: { now: () => 0 },
+});
+
+function uiHarness(mode = 'ffa') {
+  const app = Object.create(uiBB.App.prototype);
+  const source = 'A\nINC R0\nWAIT';
+  const entry = { id: 0, source, draft: source, compiled: BB.assemble(source), runningSource: source, team: 'A' };
+  app.entries = [entry];
+  app.selectedId = 0;
+  app.mode = mode;
+  app.world = new BB.World({ entries: [compile(source, 0), compile('B\nWAIT', 1)], arena: 'open' });
+  app.persist = app.checkDraft = app.renderRoster = app.updatePanels = () => {};
+  app.flash = (message) => { app.message = message; };
+  return app;
+}
+
+test('invalid Apply preserves the applied program and reports rejection', () => {
+  for (const tick of [0, 1]) {
+    const app = uiHarness();
+    if (tick) app.world.step();
+    const entry = app.selected, source = entry.source, compiled = entry.compiled;
+    const robot = app.robotFor(entry.id), cpu = robot.vm;
+    entry.draft = 'A\nBOGUS';
+    app.applyDraft();
+    assert.strictEqual(entry.source, source);
+    assert.strictEqual(entry.compiled, compiled);
+    assert.strictEqual(entry.runningSource, source);
+    assert.strictEqual(robot.vm, cpu);
+    assert.strictEqual(entry.draft, 'A\nBOGUS');
+    assert.match(app.message, /Not applied.*previously applied code/);
+    const previous = cpu.regs[0];
+    app.world.step();
+    assert.strictEqual(cpu.regs[0], previous + 1);
+  }
+});
+
+test('valid Apply still hot-swaps the CPU and preserves the body', () => {
+  const app = uiHarness();
+  app.world.step();
+  const robot = app.robotFor(0), oldCpu = robot.vm;
+  const body = [robot.x, robot.y, robot.health];
+  app.selected.draft = 'A\nMOV R0, 42\nWAIT';
+  app.applyDraft();
+  assert.notStrictEqual(robot.vm, oldCpu);
+  assert.deepStrictEqual([robot.x, robot.y, robot.health], body);
+  app.world.step();
+  assert.strictEqual(robot.vm.regs[0], 42);
+});
+
+test('Step rejects incomplete teams and allows ready teams and solo practice', () => {
+  for (const mode of ['2v2', '3v3']) {
+    const app = uiHarness(mode);
+    app.stepOnce();
+    assert.strictEqual(app.world.tick, 0);
+    assert.match(app.message, /working robots on each team/);
+    app.entries = Array.from({ length: 2 * app.teamSize }, (_, i) => ({
+      ...app.entries[0], id: i, team: i < app.teamSize ? 'A' : 'B',
+    }));
+    app.stepOnce();
+    assert.strictEqual(app.world.tick, 1);
+  }
+  const app = uiHarness();
+  app.world = new BB.World({ entries: [compile('Solo\nWAIT', 0)] });
+  app.stepOnce();
+  assert.strictEqual(app.world.tick, 1);
+  assert.strictEqual(app.world.over, false);
+});
+
+test('FRONT measures body clearance at rounded obstacle corners and diagonal walls', () => {
+  const obstacle = { x: 100, y: 200, w: 20, h: 100 };
+  const w = new BB.World({ entries: [compile('A\nWAIT', 0)], obstacles: [obstacle] });
+  const r = w.robots[0];
+  for (const [x, y, heading, expected] of [
+    [84, 190, 0, 16 - Math.sqrt(156)],
+    [136, 190, 180, 16 - Math.sqrt(156)],
+    [84, 310, 0, 16 - Math.sqrt(156)],
+    [136, 310, 180, 16 - Math.sqrt(156)],
+    [80, 250, 0, 4],
+  ]) {
+    Object.assign(r, { x, y, heading });
+    const distance = w.freeDistance(r);
+    assert.ok(Math.abs(distance - expected) < 1e-8, `clearance=${distance}, expected=${expected}`);
+    const dx = Math.cos(heading * BB.geo.DEG), dy = Math.sin(heading * BB.geo.DEG);
+    assert.strictEqual(BB.geo.circleRectPush(x + dx * (distance - 1e-4), y + dy * (distance - 1e-4), 16, obstacle), null);
+    assert.ok(BB.geo.circleRectPush(x + dx * (distance + 1e-4), y + dy * (distance + 1e-4), 16, obstacle));
+  }
+  // A bounding-box expansion would incorrectly report a nearby corner here.
+  Object.assign(r, { x: 84, y: 180, heading: 0 });
+  assert.strictEqual(w.freeDistance(r), 700);
+  Object.assign(r, { x: 84, y: 250, heading: 180 });
+  assert.strictEqual(w.freeDistance(r), 68, 'touching an obstacle behind us should allow driving away');
+  w.obstacles = [];
+  Object.assign(r, { x: 100, y: 100, heading: 225 });
+  assert.ok(Math.abs(w.freeDistance(r) - 84 * Math.sqrt(2)) < 1e-8);
+});
+
+test('collision solver separates crowds at walls, obstacles and coincident positions', () => {
+  const obstacle = { x: 100, y: 200, w: 20, h: 100 };
+  for (const setup of [
+    { positions: [[16, 300], [40, 300]], obstacles: [] },
+    { positions: Array.from({ length: 6 }, (_, i) => [16 + i * 24, 300]), obstacles: [] },
+    { positions: [[136, 250], [160, 250], [184, 250]], obstacles: [obstacle] },
+    { positions: [[300, 300], [300, 300], [300, 300]], obstacles: [] },
+    { positions: [[16, 16], [35, 35], [50, 16]], obstacles: [] },
+  ]) {
+    const w = new BB.World({ entries: setup.positions.map((_, i) => compile(`Bot${i}\nWAIT`, i)), obstacles: setup.obstacles });
+    w.robots.forEach((r, i) => Object.assign(r, { x: setup.positions[i][0], y: setup.positions[i][1] }));
+    w.step();
+    for (const r of w.robots) {
+      assert.ok(r.x >= 16 && r.x <= 784 && r.y >= 16 && r.y <= 584);
+      for (const o of w.obstacles) {
+        const overlap = BB.geo.circleRectPush(r.x, r.y, 16, o);
+        assert.ok(!overlap || overlap.depth < 1e-6);
+      }
+      for (const other of w.robots) if (other !== r) {
+        assert.ok(Math.hypot(r.x - other.x, r.y - other.y) >= 32 - 1e-6, 'robot overlap remains');
+      }
+    }
+  }
+});
+
+test('iterative collision correction charges ram damage once and preserves friendly safety', () => {
+  for (const friendly of [false, true]) {
+    const entries = [0, 1].map((id) => ({ ...compile(`Bot${id}\nWAIT`, id), team: friendly ? 0 : undefined }));
+    const w = new BB.World({ entries, arena: 'open' });
+    Object.assign(w.robots[0], { x: 16, y: 300, heading: 0, targetHeading: 0 });
+    Object.assign(w.robots[1], { x: 43, y: 300, heading: 180, targetHeading: 180, speed: 2, targetSpeed: 2 });
+    w.step();
+    assert.deepStrictEqual(w.robots.map((r) => r.health), friendly ? [100, 100] : [99, 99]);
+    assert.strictEqual(w.events.filter((e) => e.type === 'bump').length, friendly ? 0 : 1);
+  }
+});
+
+function playbackHarness(speedIndex = 3) {
+  const app = uiHarness();
+  app.world = new BB.World({ entries: [compile('Solo\nWAIT', 0)], arena: 'open' });
+  Object.assign(app, { running: true, acc: 0, lastFrameTime: null, lastPanelUpdate: 0, speedIndex,
+    renderer: { addEvents() {}, draw() {} } });
+  return app;
+}
+
+test('playback advances equally at 30, 60, 120 and 144 Hz for fractional and fast speeds', () => {
+  for (const [speedIndex, ticks] of [[0, 6], [3, 60], [8, 3600]]) {
+    for (const hz of [30, 60, 120, 144]) {
+      const app = playbackHarness(speedIndex);
+      app.frame(0);
+      for (let frame = 1; frame <= hz; frame++) app.frame(frame * 1000 / hz);
+      assert.strictEqual(app.world.tick, ticks, `speed index ${speedIndex}, ${hz}Hz`);
+    }
+  }
+});
+
+test('playback pause/resume ignores suspended time and bounds stall catch-up', () => {
+  const app = playbackHarness();
+  app.frame(0);
+  app.frame(1000 / 60);
+  assert.strictEqual(app.world.tick, 1);
+  app.toggleRun();
+  app.frame(60000);
+  assert.strictEqual(app.world.tick, 1);
+  app.toggleRun();
+  app.frame(60010);
+  app.frame(60010 + 1000 / 60);
+  assert.strictEqual(app.world.tick, 2);
+  const fast = playbackHarness(8);
+  fast.frame(0);
+  fast.frame(60000);
+  assert.strictEqual(fast.world.tick, 200);
+  fast.frame(60000 + 1000 / 60);
+  assert.strictEqual(fast.world.tick, 260, 'stall backlog should be discarded');
+});
+
+test('CLI rejects malformed and missing integer options before reading robot files', () => {
+  const { spawnSync } = require('child_process');
+  for (const option of ['--rounds', '--seed', '--teams']) {
+    for (const value of ['nope', '0', '-1', '1.5', '2junk', '9007199254740992', undefined]) {
+      const args = ['tools/headless.js', option];
+      if (value !== undefined) args.push(value, 'missing-robot.asm');
+      const result = spawnSync(process.execPath, args, { cwd: path.join(__dirname, '..'), encoding: 'utf8', timeout: 5000 });
+      assert.ifError(result.error);
+      assert.strictEqual(result.status, 2, `${option} ${value}: ${result.stderr}`);
+      assert.match(result.stderr, /requires a positive integer/);
+      assert.doesNotMatch(result.stderr, /ENOENT/);
+      assert.strictEqual(result.stdout, '');
+    }
+  }
+  const overflow = spawnSync(process.execPath, ['tools/headless.js', '--seed', '4294967295', '--rounds', '2', 'missing-robot.asm'], {
+    cwd: path.join(__dirname, '..'), encoding: 'utf8', timeout: 5000,
+  });
+  assert.strictEqual(overflow.status, 2);
+  assert.match(overflow.stderr, /seed range/);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -54,6 +54,32 @@
     return Math.max(tmin, 0);
   }
 
+  /** Travel distance before a moving circle touches a rect; unit direction. */
+  function sweptCircleRect(ox, oy, dx, dy, radius, r) {
+    // Minkowski sum: two face strips and four round corners, not an AABB.
+    const stripDistance = (strip) => {
+      const distance = rayRect(ox, oy, dx, dy, strip);
+      // Contact behind us must not prevent driving away from a wall.
+      if (distance === 0 && !pointInRect(ox + dx * 1e-7, oy + dy * 1e-7, strip)) return Infinity;
+      return distance;
+    };
+    let t = Math.min(
+      stripDistance({ x: r.x - radius, y: r.y, w: r.w + 2 * radius, h: r.h }),
+      stripDistance({ x: r.x, y: r.y - radius, w: r.w, h: r.h + 2 * radius }),
+    );
+    for (const x of [r.x, r.x + r.w]) for (const y of [r.y, r.y + r.h]) {
+      const vx = ox - x, vy = oy - y;
+      const c = vx * vx + vy * vy - radius * radius;
+      if (c < 0) return 0;
+      const b = vx * dx + vy * dy;
+      const discriminant = b * b - c;
+      if (discriminant < 0) continue;
+      const near = -b - Math.sqrt(discriminant);
+      if (near >= 0) t = Math.min(t, near);
+    }
+    return t;
+  }
+
   /** True if segment (x1,y1)-(x2,y2) touches rect r. */
   function segmentHitsRect(x1, y1, x2, y2, r) {
     const len = Math.hypot(x2 - x1, y2 - y1);
@@ -96,5 +122,5 @@
     };
   }
 
-  BB.geo = { DEG, normAngle, angleDiff, rotateToward, angleTo, pointInRect, rayRect, segmentHitsRect, circleRectPush, makeRng };
+  BB.geo = { DEG, normAngle, angleDiff, rotateToward, angleTo, pointInRect, rayRect, sweptCircleRect, segmentHitsRect, circleRectPush, makeRng };
 })(globalThis.BB = globalThis.BB || {});

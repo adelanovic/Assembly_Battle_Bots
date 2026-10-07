@@ -129,6 +129,10 @@
           const id = parts[1].toUpperCase();
           const v = parseNumber(parts[2].toUpperCase());
           if (v === null) { err(lineNo, `${dir} value "${parts[2]}" is not a number.`); continue; }
+          if (v > 2147483647 || v < -2147483648) {
+            err(lineNo, `Number ${parts[2]} does not fit in 32 bits.`);
+            continue;
+          }
           if (checkNewName(lineNo, id, 'constant')) constants[id] = v;
         } else {
           err(lineNo, `Unknown directive "${parts[0]}". Supported: .def NAME value`);

@@ -13,11 +13,18 @@ const BB = require('./load-core')();
 const args = process.argv.slice(2);
 let seed = 1, rounds = 1, verbose = false, arena = 'classic', teamSize = 0;
 const files = [];
+function positiveInteger(option, value, max = Number.MAX_SAFE_INTEGER) {
+  if (!/^\d+$/.test(value || '') || !Number.isSafeInteger(Number(value)) || Number(value) < 1 || Number(value) > max) {
+    console.error(`${option} requires a positive integer${max < Number.MAX_SAFE_INTEGER ? ` up to ${max}` : ''}, got ${value === undefined ? '(missing)' : value}`);
+    process.exit(2);
+  }
+  return Number(value);
+}
 for (let i = 0; i < args.length; i++) {
-  if (args[i] === '--seed') seed = parseInt(args[++i], 10);
-  else if (args[i] === '--rounds') rounds = parseInt(args[++i], 10);
+  if (args[i] === '--seed') seed = positiveInteger('--seed', args[++i], 0xFFFFFFFF);
+  else if (args[i] === '--rounds') rounds = positiveInteger('--rounds', args[++i]);
   else if (args[i] === '--arena') arena = args[++i];
-  else if (args[i] === '--teams') teamSize = parseInt(args[++i], 10);
+  else if (args[i] === '--teams') teamSize = positiveInteger('--teams', args[++i]);
   else if (args[i] === '-v') verbose = true;
   else files.push(args[i]);
 }
@@ -27,6 +34,10 @@ if (!files.length) {
 }
 
 const entries = [];
+if (seed + rounds - 1 > 0xFFFFFFFF) {
+  console.error('seed range must stay within 1..4294967295');
+  process.exit(2);
+}
 let bad = false;
 files.forEach((f, i) => {
   const res = BB.assemble(fs.readFileSync(f, 'utf8'));
@@ -51,9 +62,10 @@ if (!BB.World.ARENAS[arena]) {
 const wins = new Map();
 for (let r = 0; r < rounds; r++) {
   const world = new BB.World({ entries, seed: seed + r, arena });
-  while (!world.over) world.step();
+  while (!world.over && world.tick < BB.CONFIG.MAX_TICKS) world.step();
+  if (!world.competitive) world.addLog('Practice run finished (time limit reached).');
   const teamLabel = (t) => `Team ${BB.World.TEAM_NAMES[t]} (${world.robots.filter((b) => b.team === t).map((b) => b.name).join(', ')})`;
-  const key = world.teamMode
+  const key = !world.competitive ? '(practice)' : world.teamMode
     ? (world.winnerTeam === null ? '(draw)' : teamLabel(world.winnerTeam))
     : (world.winner ? world.winner.name : '(draw)');
   wins.set(key, (wins.get(key) || 0) + 1);

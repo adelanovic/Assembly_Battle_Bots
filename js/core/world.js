@@ -306,16 +306,17 @@
       }
     }
 
-    /** Distance from the robot's edge to the first wall/obstacle along its heading. */
+    /** Distance the whole robot can travel along its heading before terrain contact. */
     freeDistance(r) {
       const dx = Math.cos(r.heading * G.DEG), dy = Math.sin(r.heading * G.DEG);
       let t = Infinity;
-      if (dx > 1e-9) t = Math.min(t, (this.width - r.x) / dx);
-      if (dx < -1e-9) t = Math.min(t, -r.x / dx);
-      if (dy > 1e-9) t = Math.min(t, (this.height - r.y) / dy);
-      if (dy < -1e-9) t = Math.min(t, -r.y / dy);
-      for (const o of this.obstacles) t = Math.min(t, G.rayRect(r.x, r.y, dx, dy, o));
-      return Math.max(0, t - C.ROBOT_RADIUS);
+      const R = C.ROBOT_RADIUS;
+      if (dx > 1e-9) t = Math.min(t, (this.width - R - r.x) / dx);
+      if (dx < -1e-9) t = Math.min(t, (R - r.x) / dx);
+      if (dy > 1e-9) t = Math.min(t, (this.height - R - r.y) / dy);
+      if (dy < -1e-9) t = Math.min(t, (R - r.y) / dy);
+      for (const o of this.obstacles) t = Math.min(t, G.sweptCircleRect(r.x, r.y, dx, dy, R, o));
+      return Math.max(0, t);
     }
 
     lineOfSight(x1, y1, x2, y2) {
@@ -414,6 +415,10 @@
       r.x += Math.cos(r.heading * G.DEG) * r.speed;
       r.y += Math.sin(r.heading * G.DEG) * r.speed;
 
+      this.constrainRobot(r);
+    }
+
+    constrainRobot(r) {
       const R = C.ROBOT_RADIUS;
       let bumped = false;
       if (r.x < R) { r.x = R; bumped = true; }
@@ -433,29 +438,41 @@
 
     resolveRobotCollisions(list) {
       const R2 = C.ROBOT_RADIUS * 2;
-      for (let i = 0; i < list.length; i++) {
-        for (let j = i + 1; j < list.length; j++) {
-          const a = list[i], b = list[j];
-          if (!a.alive || !b.alive) continue;
-          let dx = b.x - a.x, dy = b.y - a.y;
-          let d = Math.hypot(dx, dy);
-          if (d >= R2) continue;
-          if (d < 1e-6) { dx = 1; dy = 0; d = 1; }
-          const nx = dx / d, ny = dy / d;
-          // Closing speed along the contact normal.
-          const avx = Math.cos(a.heading * G.DEG) * a.speed, avy = Math.sin(a.heading * G.DEG) * a.speed;
-          const bvx = Math.cos(b.heading * G.DEG) * b.speed, bvy = Math.sin(b.heading * G.DEG) * b.speed;
-          const closing = (avx - bvx) * nx + (avy - bvy) * ny;
-          const push = (R2 - d) / 2;
-          a.x -= nx * push; a.y -= ny * push;
-          b.x += nx * push; b.y += ny * push;
-          if (closing > 1 && this.isEnemy(a, b)) {
-            this.damage(a, 1, b, 'ram');
-            this.damage(b, 1, a, 'ram');
-            this.emit({ type: 'bump', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+      const contacts = new Set();
+      // Alternate body separation and terrain correction until contacts settle.
+      // Bound work for impossible crowds; allow only microscopic numerical slack.
+      for (let pass = 0; pass < 512; pass++) {
+        let separated = false;
+        for (let i = 0; i < list.length; i++) {
+          for (let j = i + 1; j < list.length; j++) {
+            const a = list[i], b = list[j];
+            if (!a.alive || !b.alive) continue;
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const d = Math.hypot(dx, dy);
+            if (d >= R2 - 1e-7) continue;
+            separated = true;
+            const nx = d < 1e-9 ? 1 : dx / d, ny = d < 1e-9 ? 0 : dy / d;
+            const push = (R2 - d + 1e-7) / 2;
+            a.x -= nx * push; a.y -= ny * push;
+            b.x += nx * push; b.y += ny * push;
+            const contact = i * list.length + j;
+            if (!contacts.has(contact)) {
+              // Apply impact effects only once per pair, not on solver iterations.
+              const avx = Math.cos(a.heading * G.DEG) * a.speed, avy = Math.sin(a.heading * G.DEG) * a.speed;
+              const bvx = Math.cos(b.heading * G.DEG) * b.speed, bvy = Math.sin(b.heading * G.DEG) * b.speed;
+              const closing = (avx - bvx) * nx + (avy - bvy) * ny;
+              if (closing > 1 && this.isEnemy(a, b)) {
+                this.damage(a, 1, b, 'ram');
+                this.damage(b, 1, a, 'ram');
+                this.emit({ type: 'bump', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+              }
+              a.speed *= 0.5; b.speed *= 0.5;
+              contacts.add(contact);
+            }
           }
-          a.speed *= 0.5; b.speed *= 0.5;
         }
+        for (const r of list) if (r.alive) this.constrainRobot(r);
+        if (!separated) break;
       }
     }
 

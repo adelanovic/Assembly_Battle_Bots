@@ -1,0 +1,772 @@
+﻿{
+  "seedCount": 20,
+  "methodology": "Seeds 1..N; four cyclic roster orders per FFA seed; team compositions swap sides; one parameter changes at a time.",
+  "config": {
+    "ARENA_W": 800,
+    "ARENA_H": 600,
+    "ROBOT_RADIUS": 16,
+    "MAX_HEALTH": 100,
+    "CYCLES_PER_TICK": 50,
+    "NUM_REGS": 8,
+    "MEMORY_SIZE": 256,
+    "STACK_SIZE": 64,
+    "MAX_SPEED": 5,
+    "MAX_REVERSE": -3,
+    "ACCELERATION": 0.5,
+    "BODY_TURN_RATE": 8,
+    "TURRET_TURN_RATE": 20,
+    "FIRE_COOLDOWN": 15,
+    "BULLET_SPEED": 10,
+    "BULLET_DAMAGE": 10,
+    "SCAN_MAX_WIDTH": 90,
+    "RADAR_RANGE": 250,
+    "MAX_TICKS": 6000
+  },
+  "baseline": {
+    "classic": {
+      "games": 80,
+      "wins": {
+        "Sentinel": 5,
+        "Hunter": 0,
+        "Dodger": 15,
+        "Orbiter": 60
+      },
+      "draws": 0,
+      "timeLimits": 2,
+      "faults": 0,
+      "meanTicks": 1657,
+      "hitRate": 0.294
+    },
+    "random": {
+      "games": 80,
+      "wins": {
+        "Sentinel": 14,
+        "Hunter": 0,
+        "Dodger": 18,
+        "Orbiter": 48
+      },
+      "draws": 0,
+      "timeLimits": 2,
+      "faults": 0,
+      "meanTicks": 1585,
+      "hitRate": 0.3
+    },
+    "open": {
+      "games": 80,
+      "wins": {
+        "Sentinel": 11,
+        "Hunter": 0,
+        "Dodger": 29,
+        "Orbiter": 40
+      },
+      "draws": 0,
+      "timeLimits": 4,
+      "faults": 0,
+      "meanTicks": 1449,
+      "hitRate": 0.172
+    }
+  },
+  "robotVariants": {
+    "Sentinel SWEEP_STEP=18": {
+      "classic": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 17,
+          "Hunter": 0,
+          "Dodger": 13,
+          "Orbiter": 50
+        },
+        "draws": 0,
+        "timeLimits": 2,
+        "faults": 0,
+        "meanTicks": 1560,
+        "hitRate": 0.283
+      },
+      "random": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 19,
+          "Hunter": 1,
+          "Dodger": 14,
+          "Orbiter": 45
+        },
+        "draws": 1,
+        "timeLimits": 1,
+        "faults": 0,
+        "meanTicks": 1477,
+        "hitRate": 0.315
+      },
+      "open": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 19,
+          "Hunter": 0,
+          "Dodger": 30,
+          "Orbiter": 30
+        },
+        "draws": 1,
+        "timeLimits": 4,
+        "faults": 0,
+        "meanTicks": 1239,
+        "hitRate": 0.195
+      }
+    },
+    "Sentinel DODGE_RANGE=120": {
+      "classic": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 3,
+          "Hunter": 0,
+          "Dodger": 16,
+          "Orbiter": 61
+        },
+        "draws": 0,
+        "timeLimits": 2,
+        "faults": 0,
+        "meanTicks": 1719,
+        "hitRate": 0.279
+      },
+      "random": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 13,
+          "Hunter": 0,
+          "Dodger": 14,
+          "Orbiter": 52
+        },
+        "draws": 1,
+        "timeLimits": 7,
+        "faults": 0,
+        "meanTicks": 2097,
+        "hitRate": 0.281
+      },
+      "open": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 12,
+          "Hunter": 0,
+          "Dodger": 23,
+          "Orbiter": 45
+        },
+        "draws": 0,
+        "timeLimits": 5,
+        "faults": 0,
+        "meanTicks": 1575,
+        "hitRate": 0.173
+      }
+    },
+    "Hunter CLOSE=140": {
+      "classic": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 8,
+          "Hunter": 0,
+          "Dodger": 12,
+          "Orbiter": 60
+        },
+        "draws": 0,
+        "timeLimits": 1,
+        "faults": 0,
+        "meanTicks": 1603,
+        "hitRate": 0.263
+      },
+      "random": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 15,
+          "Hunter": 0,
+          "Dodger": 13,
+          "Orbiter": 52
+        },
+        "draws": 0,
+        "timeLimits": 1,
+        "faults": 0,
+        "meanTicks": 1888,
+        "hitRate": 0.295
+      },
+      "open": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 12,
+          "Hunter": 0,
+          "Dodger": 34,
+          "Orbiter": 34
+        },
+        "draws": 0,
+        "timeLimits": 5,
+        "faults": 0,
+        "meanTicks": 1525,
+        "hitRate": 0.164
+      }
+    },
+    "Hunter ALIGN=4": {
+      "classic": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 4,
+          "Hunter": 0,
+          "Dodger": 16,
+          "Orbiter": 60
+        },
+        "draws": 0,
+        "timeLimits": 3,
+        "faults": 0,
+        "meanTicks": 1573,
+        "hitRate": 0.293
+      },
+      "random": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 13,
+          "Hunter": 0,
+          "Dodger": 20,
+          "Orbiter": 47
+        },
+        "draws": 0,
+        "timeLimits": 1,
+        "faults": 0,
+        "meanTicks": 1599,
+        "hitRate": 0.3
+      },
+      "open": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 11,
+          "Hunter": 1,
+          "Dodger": 28,
+          "Orbiter": 40
+        },
+        "draws": 0,
+        "timeLimits": 7,
+        "faults": 0,
+        "meanTicks": 1620,
+        "hitRate": 0.146
+      }
+    },
+    "Dodger WALL_GAP=100": {
+      "classic": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 8,
+          "Hunter": 0,
+          "Dodger": 15,
+          "Orbiter": 57
+        },
+        "draws": 0,
+        "timeLimits": 3,
+        "faults": 0,
+        "meanTicks": 1717,
+        "hitRate": 0.292
+      },
+      "random": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 15,
+          "Hunter": 0,
+          "Dodger": 16,
+          "Orbiter": 49
+        },
+        "draws": 0,
+        "timeLimits": 4,
+        "faults": 0,
+        "meanTicks": 1704,
+        "hitRate": 0.299
+      },
+      "open": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 12,
+          "Hunter": 0,
+          "Dodger": 32,
+          "Orbiter": 36
+        },
+        "draws": 0,
+        "timeLimits": 2,
+        "faults": 0,
+        "meanTicks": 1209,
+        "hitRate": 0.202
+      }
+    },
+    "Dodger DODGE_RANGE=140": {
+      "classic": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 10,
+          "Hunter": 0,
+          "Dodger": 17,
+          "Orbiter": 53
+        },
+        "draws": 0,
+        "timeLimits": 1,
+        "faults": 0,
+        "meanTicks": 1629,
+        "hitRate": 0.279
+      },
+      "random": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 14,
+          "Hunter": 1,
+          "Dodger": 19,
+          "Orbiter": 46
+        },
+        "draws": 0,
+        "timeLimits": 1,
+        "faults": 0,
+        "meanTicks": 1611,
+        "hitRate": 0.289
+      },
+      "open": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 15,
+          "Hunter": 0,
+          "Dodger": 20,
+          "Orbiter": 45
+        },
+        "draws": 0,
+        "timeLimits": 3,
+        "faults": 0,
+        "meanTicks": 1368,
+        "hitRate": 0.196
+      }
+    },
+    "Orbiter RANGE=120": {
+      "classic": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 17,
+          "Hunter": 0,
+          "Dodger": 13,
+          "Orbiter": 50
+        },
+        "draws": 0,
+        "timeLimits": 3,
+        "faults": 0,
+        "meanTicks": 1505,
+        "hitRate": 0.278
+      },
+      "random": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 20,
+          "Hunter": 0,
+          "Dodger": 18,
+          "Orbiter": 42
+        },
+        "draws": 0,
+        "timeLimits": 1,
+        "faults": 0,
+        "meanTicks": 1529,
+        "hitRate": 0.281
+      },
+      "open": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 5,
+          "Hunter": 0,
+          "Dodger": 35,
+          "Orbiter": 40
+        },
+        "draws": 0,
+        "timeLimits": 12,
+        "faults": 0,
+        "meanTicks": 1785,
+        "hitRate": 0.132
+      }
+    },
+    "Orbiter LOCK_WIDTH=32": {
+      "classic": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 7,
+          "Hunter": 0,
+          "Dodger": 15,
+          "Orbiter": 58
+        },
+        "draws": 0,
+        "timeLimits": 2,
+        "faults": 0,
+        "meanTicks": 1911,
+        "hitRate": 0.282
+      },
+      "random": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 10,
+          "Hunter": 1,
+          "Dodger": 17,
+          "Orbiter": 52
+        },
+        "draws": 0,
+        "timeLimits": 1,
+        "faults": 0,
+        "meanTicks": 1543,
+        "hitRate": 0.311
+      },
+      "open": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 6,
+          "Hunter": 0,
+          "Dodger": 29,
+          "Orbiter": 45
+        },
+        "draws": 0,
+        "timeLimits": 5,
+        "faults": 0,
+        "meanTicks": 1458,
+        "hitRate": 0.169
+      }
+    }
+  },
+  "ruleVariants": {
+    "CYCLES_PER_TICK=35": {
+      "classic": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 8,
+          "Hunter": 0,
+          "Dodger": 24,
+          "Orbiter": 48
+        },
+        "draws": 0,
+        "timeLimits": 3,
+        "faults": 0,
+        "meanTicks": 1962,
+        "hitRate": 0.267
+      },
+      "random": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 10,
+          "Hunter": 0,
+          "Dodger": 20,
+          "Orbiter": 50
+        },
+        "draws": 0,
+        "timeLimits": 7,
+        "faults": 0,
+        "meanTicks": 2003,
+        "hitRate": 0.274
+      },
+      "open": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 5,
+          "Hunter": 0,
+          "Dodger": 38,
+          "Orbiter": 37
+        },
+        "draws": 0,
+        "timeLimits": 5,
+        "faults": 0,
+        "meanTicks": 1910,
+        "hitRate": 0.149
+      }
+    },
+    "CYCLES_PER_TICK=65": {
+      "classic": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 7,
+          "Hunter": 0,
+          "Dodger": 10,
+          "Orbiter": 62
+        },
+        "draws": 1,
+        "timeLimits": 1,
+        "faults": 0,
+        "meanTicks": 1666,
+        "hitRate": 0.292
+      },
+      "random": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 8,
+          "Hunter": 0,
+          "Dodger": 22,
+          "Orbiter": 50
+        },
+        "draws": 0,
+        "timeLimits": 0,
+        "faults": 0,
+        "meanTicks": 1640,
+        "hitRate": 0.296
+      },
+      "open": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 7,
+          "Hunter": 1,
+          "Dodger": 26,
+          "Orbiter": 45
+        },
+        "draws": 1,
+        "timeLimits": 8,
+        "faults": 0,
+        "meanTicks": 1583,
+        "hitRate": 0.148
+      }
+    },
+    "FIRE_COOLDOWN=10": {
+      "classic": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 6,
+          "Hunter": 0,
+          "Dodger": 17,
+          "Orbiter": 57
+        },
+        "draws": 0,
+        "timeLimits": 1,
+        "faults": 0,
+        "meanTicks": 1265,
+        "hitRate": 0.281
+      },
+      "random": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 15,
+          "Hunter": 1,
+          "Dodger": 20,
+          "Orbiter": 44
+        },
+        "draws": 0,
+        "timeLimits": 3,
+        "faults": 0,
+        "meanTicks": 1272,
+        "hitRate": 0.295
+      },
+      "open": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 11,
+          "Hunter": 0,
+          "Dodger": 24,
+          "Orbiter": 45
+        },
+        "draws": 0,
+        "timeLimits": 3,
+        "faults": 0,
+        "meanTicks": 1110,
+        "hitRate": 0.159
+      }
+    },
+    "FIRE_COOLDOWN=20": {
+      "classic": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 10,
+          "Hunter": 0,
+          "Dodger": 17,
+          "Orbiter": 53
+        },
+        "draws": 0,
+        "timeLimits": 0,
+        "faults": 0,
+        "meanTicks": 1735,
+        "hitRate": 0.286
+      },
+      "random": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 11,
+          "Hunter": 0,
+          "Dodger": 14,
+          "Orbiter": 55
+        },
+        "draws": 0,
+        "timeLimits": 2,
+        "faults": 0,
+        "meanTicks": 1936,
+        "hitRate": 0.306
+      },
+      "open": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 7,
+          "Hunter": 1,
+          "Dodger": 37,
+          "Orbiter": 35
+        },
+        "draws": 0,
+        "timeLimits": 2,
+        "faults": 0,
+        "meanTicks": 1731,
+        "hitRate": 0.182
+      }
+    },
+    "BULLET_SPEED=8": {
+      "classic": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 12,
+          "Hunter": 0,
+          "Dodger": 12,
+          "Orbiter": 56
+        },
+        "draws": 0,
+        "timeLimits": 4,
+        "faults": 0,
+        "meanTicks": 1927,
+        "hitRate": 0.246
+      },
+      "random": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 17,
+          "Hunter": 0,
+          "Dodger": 7,
+          "Orbiter": 55
+        },
+        "draws": 1,
+        "timeLimits": 2,
+        "faults": 0,
+        "meanTicks": 1907,
+        "hitRate": 0.267
+      },
+      "open": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 6,
+          "Hunter": 0,
+          "Dodger": 29,
+          "Orbiter": 45
+        },
+        "draws": 0,
+        "timeLimits": 1,
+        "faults": 0,
+        "meanTicks": 1296,
+        "hitRate": 0.192
+      }
+    },
+    "BULLET_SPEED=12": {
+      "classic": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 12,
+          "Hunter": 1,
+          "Dodger": 14,
+          "Orbiter": 53
+        },
+        "draws": 0,
+        "timeLimits": 2,
+        "faults": 0,
+        "meanTicks": 1477,
+        "hitRate": 0.299
+      },
+      "random": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 12,
+          "Hunter": 0,
+          "Dodger": 21,
+          "Orbiter": 47
+        },
+        "draws": 0,
+        "timeLimits": 1,
+        "faults": 0,
+        "meanTicks": 1476,
+        "hitRate": 0.324
+      },
+      "open": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 11,
+          "Hunter": 1,
+          "Dodger": 36,
+          "Orbiter": 32
+        },
+        "draws": 0,
+        "timeLimits": 11,
+        "faults": 0,
+        "meanTicks": 1765,
+        "hitRate": 0.14
+      }
+    },
+    "MAX_SPEED=4": {
+      "classic": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 4,
+          "Hunter": 1,
+          "Dodger": 11,
+          "Orbiter": 64
+        },
+        "draws": 0,
+        "timeLimits": 3,
+        "faults": 0,
+        "meanTicks": 1738,
+        "hitRate": 0.275
+      },
+      "random": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 14,
+          "Hunter": 0,
+          "Dodger": 24,
+          "Orbiter": 42
+        },
+        "draws": 0,
+        "timeLimits": 3,
+        "faults": 0,
+        "meanTicks": 1840,
+        "hitRate": 0.279
+      },
+      "open": {
+        "games": 80,
+        "wins": {
+          "Sentinel": 10,
+          "Hunter": 1,
+          "Dodger": 36,
+          "Orbiter": 33
+        },
+        "draws": 0,
+        "timeLimits": 3,
+        "faults": 0,
+        "meanTicks": 1289,
+        "hitRate": 0.19
+      }
+    }
+  },
+  "teams2v2": {
+    "classic": {
+      "games": 240,
+      "wins": {
+        "Sentinel": 36,
+        "Hunter": 6,
+        "Dodger": 79,
+        "Orbiter": 119
+      },
+      "draws": 0,
+      "timeLimits": 4,
+      "faults": 0
+    },
+    "random": {
+      "games": 240,
+      "wins": {
+        "Sentinel": 46,
+        "Hunter": 2,
+        "Dodger": 75,
+        "Orbiter": 117
+      },
+      "draws": 0,
+      "timeLimits": 4,
+      "faults": 0
+    },
+    "open": {
+      "games": 240,
+      "wins": {
+        "Sentinel": 54,
+        "Hunter": 1,
+        "Dodger": 90,
+        "Orbiter": 95
+      },
+      "draws": 0,
+      "timeLimits": 1,
+      "faults": 0
+    }
+  },
+  "totalMatches": 4560
+}

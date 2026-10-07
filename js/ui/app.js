@@ -15,7 +15,7 @@
 
   const C = BB.CONFIG;
   const STORAGE_KEY = 'battlebots.roster.v1';
-  const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 4, 8, 20, 60]; // ticks per animation frame
+  const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 4, 8, 20, 60]; // multipliers of 60 ticks/second
   const DEFAULT_SPEED = 3;
   const MAX_STEPS_PER_FRAME = 200;
   const MODES = {
@@ -36,6 +36,7 @@
       this.running = false;
       this.speedIndex = DEFAULT_SPEED;
       this.acc = 0;
+      this.lastFrameTime = null;
       this.selectedId = null;
       this.mode = 'ffa';
       this.lastPanelUpdate = 0;
@@ -49,7 +50,7 @@
       this.buildReference();
       this.restore();
       this.resetMatch();
-      requestAnimationFrame(() => this.frame());
+      requestAnimationFrame((timestamp) => this.frame(timestamp));
     }
 
     // ------------------------------------------------------------ roster
@@ -159,6 +160,7 @@
     resetMatch() {
       this.running = false;
       this.acc = 0;
+      this.lastFrameTime = null;
       const seed = parseInt($('#seed').value, 10) || 1;
       const valid = this.entries.filter((e) => !e.compiled.errors.length);
       const playing = this.teamSize ? valid.filter((e) => e.team) : valid;
@@ -186,21 +188,28 @@
       const problem = !this.running && this.teamProblem();
       if (problem) { this.flash(problem); return; }
       this.running = !this.running;
+      this.lastFrameTime = null;
       this.updatePanels(true);
     }
 
     stepOnce() {
       if (this.world.over) return;
+      if (!this.world.robots.length) { this.flash('Add at least one robot first.'); return; }
+      const problem = this.teamProblem();
+      if (problem) { this.flash(problem); return; }
       this.running = false;
       this.world.step();
       this.updatePanels(true);
     }
 
-    frame() {
+    frame(now = performance.now()) {
+      const elapsed = this.lastFrameTime === null ? 0 : Math.max(0, Math.min(now - this.lastFrameTime, 100));
+      this.lastFrameTime = now;
       if (this.running && this.world && !this.world.over) {
-        this.acc += SPEEDS[this.speedIndex];
-        let steps = Math.min(Math.floor(this.acc), MAX_STEPS_PER_FRAME);
-        this.acc -= Math.floor(this.acc);
+        this.acc += elapsed * 60 / 1000 * SPEEDS[this.speedIndex];
+        let steps = Math.min(Math.floor(this.acc + 1e-9), MAX_STEPS_PER_FRAME);
+        // Discard excess catch-up work after a stall, retaining only a fraction.
+        this.acc = Math.max(0, this.acc - Math.floor(this.acc + 1e-9));
         while (steps-- > 0 && !this.world.over) this.world.step();
         if (this.world.over) this.running = false;
       }
@@ -209,7 +218,7 @@
         this.renderer.draw(this.world, this.selectedId);
       }
       if (performance.now() - this.lastPanelUpdate > 100) this.updatePanels(false);
-      requestAnimationFrame(() => this.frame());
+      requestAnimationFrame((timestamp) => this.frame(timestamp));
     }
 
     /** Keep the canvas as large as its container allows, at 4:3. */
@@ -253,15 +262,17 @@
     applyDraft() {
       const e = this.selected;
       if (!e) return;
-      e.source = e.draft;
-      e.compiled = this.compile(e.source);
-      this.persist();
-      this.checkDraft();
-      if (e.compiled.errors.length) {
-        this.flash('Saved, but the code has errors. Fix them to put this robot in the arena.');
-        this.renderRoster();
+      const compiled = this.compile(e.draft);
+      if (compiled.errors.length) {
+        this.checkDraft();
+        this.persist();
+        this.flash('Not applied: fix the syntax errors first. The robot keeps its previously applied code.');
         return;
       }
+      e.source = e.draft;
+      e.compiled = compiled;
+      this.persist();
+      this.checkDraft();
       const robot = this.robotFor(e.id);
       if (this.world.tick === 0 || this.world.over) {
         this.resetMatch();
@@ -531,7 +542,7 @@
       const showSpeed = () => {
         const s = SPEEDS[this.speedIndex];
         $('#speed-label').textContent = `${s}× · ${Math.round(s * 60)}/s`;
-        speed.title = `${s} ticks per frame, about ${Math.round(s * 60)} ticks per second`;
+        speed.title = `${s}× speed, ${Math.round(s * 60)} ticks per second`;
       };
       speed.oninput = () => { this.speedIndex = Number(speed.value); showSpeed(); };
       showSpeed();
