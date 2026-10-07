@@ -308,14 +308,17 @@
     drawLabel(ctx, r, now) {
       const R = C.ROBOT_RADIUS;
       const hp = Math.max(0, r.health / C.MAX_HEALTH);
-      const w = 40, bx = r.x - w / 2, by = r.y - R - 15;
+      // Label above the robot, or below it when hugging the top wall.
+      const above = r.y - R - 15 >= 18;
+      const w = 40, bx = r.x - w / 2, by = above ? r.y - R - 15 : r.y + R + 8;
+      const ty = above ? by - 4 : by + 16;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       roundRect(ctx, bx - 1, by - 1, w + 2, 6, 2);
       ctx.fill();
       ctx.fillStyle = hp > 0.5 ? '#66d17a' : hp > 0.25 ? '#ffc94d' : '#ff5a5a';
       if (hp > 0) { roundRect(ctx, bx, by, w * hp, 4, 1.5); ctx.fill(); }
 
-      let label = r.name;
+      let label = r.team === null ? r.name : `${BB.World.TEAM_NAMES[r.team]} · ${r.name}`;
       if (r.vm.fault) label += Math.floor(now / 400) % 2 ? '  ⚠' : '   ';
       else if (r.vm.halted) label += ' (halted)';
       ctx.font = '600 11px system-ui, sans-serif';
@@ -323,9 +326,9 @@
       ctx.lineJoin = 'round';
       ctx.lineWidth = 3;
       ctx.strokeStyle = 'rgba(10,12,18,0.85)';
-      ctx.strokeText(label, r.x, by - 4);
+      ctx.strokeText(label, r.x, ty);
       ctx.fillStyle = r.vm.fault ? '#ffd27f' : '#eef1f6';
-      ctx.fillText(label, r.x, by - 4);
+      ctx.fillText(label, r.x, ty);
     }
 
     drawWreck(ctx, r) {
@@ -427,12 +430,17 @@
     }
 
     drawBanner(ctx, world) {
-      const text = world.winner ? `${world.winner.name} wins!` : 'Draw!';
+      let text = world.winner ? `${world.winner.name} wins!` : 'Draw!';
+      let color = world.winner ? world.winner.color : '#e8ecf3';
+      if (world.teamMode && world.winnerTeam !== null) {
+        text = `Team ${BB.World.TEAM_NAMES[world.winnerTeam]} wins!`;
+        color = BB.World.TEAM_COLORS[world.winnerTeam][0];
+      }
       ctx.fillStyle = 'rgba(10,12,18,0.72)';
       ctx.fillRect(0, C.ARENA_H / 2 - 44, C.ARENA_W, 88);
       ctx.textAlign = 'center';
       ctx.font = '700 36px system-ui, sans-serif';
-      ctx.fillStyle = world.winner ? world.winner.color : '#e8ecf3';
+      ctx.fillStyle = color;
       ctx.fillText(text, C.ARENA_W / 2, C.ARENA_H / 2 + 6);
       ctx.font = '13px system-ui, sans-serif';
       ctx.fillStyle = '#aab2c2';

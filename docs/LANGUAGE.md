@@ -132,9 +132,10 @@ loop:
 | `FRONT` | Free distance ahead of your body (to a wall or obstacle) along your heading. |
 | `LAST_HIT` | Ticks since you were last hit by a projectile, or -1 if never. |
 | `TICK` | Current simulation tick. |
-| `ENEMIES` | Number of enemy robots still alive. |
+| `ENEMIES` | Number of enemy robots still alive (teammates excluded). |
 | `ARENA_W` | Arena width (800). |
 | `ARENA_H` | Arena height (600). |
+| `ALLIES` | Number of living teammates (always 0 in free-for-all). |
 
 ## Simulation constants
 

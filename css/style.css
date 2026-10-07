@@ -9,6 +9,8 @@
   --bad: #ff6b6b;
   --warn: #ffc94d;
   --good: #66d17a;
+  --team-a: #ff6b5c;
+  --team-b: #4fc3f7;
   --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
 }
 
@@ -41,7 +43,8 @@ button.primary { background: #1f5fae; border-color: #2a72cc; }
 button.primary:hover { background: #2a72cc; }
 button.primary.active { background: #8a5a12; border-color: #b07519; }
 button.icon { padding: 0 6px; background: none; border: none; color: var(--muted); }
-button.icon:hover { color: var(--bad); }
+button.icon:hover { color: var(--text); }
+button.icon.danger:hover { color: var(--bad); }
 
 /* ---------- toolbar ---------- */
 .toolbar {
@@ -103,6 +106,13 @@ main {
 .hp-fill { height: 100%; transition: width .15s; }
 .card-status { font-size: 12px; color: var(--muted); }
 .card-status.bad { color: var(--bad); }
+.card.team-a { border-left: 3px solid var(--team-a); }
+.card.team-b { border-left: 3px solid var(--team-b); }
+.team-pick { display: flex; gap: 4px; margin-top: 6px; }
+.team-pick button { flex: 1; padding: 2px 0; font-size: 12px; color: var(--muted); }
+.team-pick button.on { color: #fff; background: #3a4252; border-color: #56607a; }
+.team-pick button.on.team-a { background: #7a2e2e; border-color: var(--team-a); }
+.team-pick button.on.team-b { background: #1f4f6e; border-color: var(--team-b); }
 
 /* ---------- tabs ---------- */
 .tabs { display: flex; border-bottom: 1px solid var(--border); }

@@ -13,6 +13,8 @@ There is nothing to install and no build step.
 
 If you prefer to serve it, any static server works, for example `python -m http.server` and then http://localhost:8000.
 
+**Hosting:** the repository root is a complete static site, so it can be served as-is from GitHub Pages or any other static host.
+
 Node.js (v16+) is only needed for the optional command-line tools:
 
 ```sh
@@ -21,6 +23,7 @@ npm run match         # one headless match between the examples, printed to the 
 npm run tournament    # 50 seeds, win counts per robot
 node tools/headless.js --seed 7 my_bot.asm examples/hunter.asm
 node tools/headless.js --rounds 50 --arena random my_bot.asm examples/*.asm   # test across 50 random maps
+node tools/headless.js --teams 2 a.asm b.asm c.asm d.asm   # 2v2: first two files are team A, the rest team B
 npm run build         # regenerate examples/*.asm and docs/LANGUAGE.md from the JS sources
 ```
 
@@ -31,14 +34,20 @@ npm run build         # regenerate examples/*.asm and docs/LANGUAGE.md from the 
 | **▶ Start / ❚❚ Pause** (Space) | Run or pause the match. |
 | **⏭ Step** (`.`) | Advance exactly one tick. The CPU inspector and the yellow gutter marker show the next line each robot will execute. |
 | **↺ Reset** (`R`) | Respawn every robot with its *applied* code. The seed decides spawn points and `RAND`, so a seed always replays the same match. |
+| **Mode** | **Free-for-all**, **Teams 2v2** or **Teams 3v3**. In a team mode each robot card gets **A / B / Bench** buttons, and **⧉** duplicates a robot so you can field several copies. A team match only starts when both teams have exactly the right number of working robots. |
 | **Arena** | **Classic** is the fixed default layout. **Random** generates a mirrored obstacle layout from the seed, so 🎲 gives a new map and the same seed always gives the same map. **Open** has no obstacles, which is useful for testing aim and dodging. |
 | **Speed** | 0.1× to 60× (6 to 3600 ticks per second). |
+| **Scans** | Show or hide each robot's scan cone. |
 | **+ New robot / 📂 Load .asm files… / + Add example** | Add robots. Loading accepts several files at once, and you can also drag and drop `.asm` files onto the page. **Each file becomes one robot.** |
 | **Editor → Apply** (Ctrl+Enter) | Assemble the code and use it. Before the match starts, the arena resets. During a match, the robot hot-swaps to the new program without losing its position or health. |
 | **💾 Save .asm** (Ctrl+S) | Download the editor contents as a `.asm` file. |
 | **Revert** | Discard edits you have not applied. |
 
-The editor checks your code as you type. Errors appear under the editor and in the line gutter, and clicking an error jumps to that line. Robots with syntax errors stay in the roster but are left out of the arena until fixed. The roster is saved in your browser's `localStorage`.
+The editor checks your code as you type. Errors appear under the editor and in the line gutter, and clicking an error jumps to that line. Robots with syntax errors stay in the roster but are left out of the arena until fixed. The **CPU inspector** under the editor shows the selected robot's registers and sensors live. Click its heading to collapse it and give the editor more room.
+
+The roster, seed and arena choice are saved in your browser's `localStorage`. Keyboard shortcuts (Space, `.`, `R`) are ignored while you're typing in the editor or a form field.
+
+The arena shows each robot as a tank. The hull points where it's driving, and the turret turns separately. Damaged robots show scorch marks, and below 25% health they trail smoke. A blinking ⚠ marks a robot whose CPU crashed, and a dimmed robot has halted its program.
 
 ## Robot files
 
@@ -69,7 +78,7 @@ The full instruction and sensor reference is on the in-app **Reference** tab and
 - **Math:** ATAN2 SIN COS SQRT NORM
 - **Flow:** CMP JMP JE JNE JL JLE JG JGE CALL RET NOP WAIT HALT
 - **Robot:** GET (read a sensor), SPEED, TURN, HEAD, AIM, FIRE, SCAN (enemies), RADAR (incoming projectiles)
-- **Sensors:** X Y HEADING SPEED HEALTH COOLDOWN TURRET SCAN_* THREAT_* FRONT LAST_HIT TICK ENEMIES ARENA_W ARENA_H
+- **Sensors:** X Y HEADING SPEED HEALTH COOLDOWN TURRET SCAN_* THREAT_* FRONT LAST_HIT TICK ENEMIES ALLIES ARENA_W ARENA_H
 
 There is no "dodge" instruction. Robots dodge by calling `RADAR` to find an incoming projectile and its direction, then moving out of its path with `HEAD` and `SPEED`. See `dodge:` in the Sentinel and Dodger examples.
 
@@ -95,14 +104,44 @@ There is no "dodge" instruction. Robots dodge by calling `RADAR` to find an inco
     - **Open enough:** obstacles cover at most 11% of the arena.
 - Each tick, every living robot gets **the same 50-cycle budget** (SCAN and RADAR cost 3, everything else costs 1). The order robots run in rotates every tick, and the world is frozen while programs run, so order gives no advantage.
 - Movement is physical. Speed is −3 to 5, acceleration 0.5 per tick, the body turns up to 8° per tick and the turret up to 20° per tick.
-- Bullets travel 10 units per tick and deal 10 damage, with a 15-tick cooldown between shots. Hitting a wall at speed deals speed/2 damage. Ramming deals 1 damage to both robots.
+- Bullets travel 10 units per tick and deal 10 damage, with a 15-tick cooldown between shots.
+- **Collisions:** touching a wall or obstacle *at any angle* stops the robot (its speed drops to 0) and deals speed ÷ 2 damage, rounded down. So a contact at speed 1 is free, and at full speed it costs 2. Sliding along a wall at a slight angle counts as a contact every tick. Ramming another robot deals 1 damage to both when they close in at more than 1 unit per tick.
 - A robot at 0 HP is destroyed. **The last robot standing wins.** After 6000 ticks, the highest health wins, and a tie is a draw. A single robot runs in practice mode with no victory check.
+
+### Team matches (2v2 and 3v3)
+
+- **No friendly fire:** bullets pass through teammates, and teammates can't damage each other by ramming (they still bump).
+- **Teammates are invisible to sensors:** `SCAN` skips them, `RADAR` ignores their bullets, and `ENEMIES` counts opponents only. The `ALLIES` sensor gives the number of living teammates. Any free-for-all robot works in a team unchanged.
+- **Fair spawns:** team A starts in the left half. Each team B robot starts at the mirror image of its team A counterpart, through the arena centre, facing the mirrored direction. All three arena layouts are point-symmetric, so both teams get identical terrain.
+- **Victory:** the last team with a robot alive wins. At the time limit, the team with the most total health wins.
+- Team A is drawn in warm colours and team B in cool colours, with an "A ·" or "B ·" before each robot's name.
+
+## Limits
+
+Out-of-range values are clamped without an error, so `SPEED 100` gives 5 and `SCAN 500` gives 90.
+
+| Thing | Limit |
+|---|---|
+| Speed | −3 to 5 units/tick, acceleration 0.5/tick |
+| Turning | body 8°/tick, turret 20°/tick |
+| Firing | 1 shot per 15 ticks; bullets: speed 10, damage 10 |
+| Health | 100, no healing |
+| Scan / radar | scan cone 1° to 90° (unlimited distance, blocked by obstacles); radar 250 units, nearest bullet only |
+| CPU | 50 cycles per tick, 8 registers, 256 memory words, 64 stack entries, 32-bit integers that wrap around |
+| Robot name | 24 characters |
+| Match length | 6000 ticks |
+
+There's no limit on the number of robots in a match or on program length. Colours repeat after 8 robots, and a very crowded arena spawns extra robots at a fallback point. All values live in `CONFIG` in `js/core/isa.js`.
 
 ## Safety: bad code can't break the arena
 
 - **Infinite loops:** the VM stops after the robot's cycle budget each tick and resumes on the next tick, so a `loop: JMP loop` only wastes its own robot's time.
 - **Runtime errors** (division by zero, stack overflow, memory out of range, SQRT of a negative number): the robot's CPU *faults* and halts with a message such as `Line 12: division by zero`, shown in the inspector and the match log. Its body stays in the arena. Other robots are unaffected.
 - **Isolation:** a VM only has its own registers, memory and stack, plus a narrow I/O interface (`sense`, `speed`, `aim`, …). It never touches world objects directly. JavaScript exceptions are trapped per robot.
+
+## Keeping robots private
+
+Robot files you don't want published, such as competition entries, can stay in the folder: just list them in `.gitignore`. They still load in your local copy through **📂 Load .asm files…**, but they're never committed or served from GitHub Pages.
 
 ## Architecture
 

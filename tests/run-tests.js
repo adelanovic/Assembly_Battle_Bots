@@ -294,5 +294,71 @@ test('open arena has no obstacles, classic is unchanged', () => {
   assert.deepStrictEqual(BB.World.makeObstacles('classic', 99), BB.World.DEFAULT_OBSTACLES);
 });
 
+console.log('Teams');
+const teamEntry = (src, id, team) => ({ ...compile(src, id), team });
+test('team B spawns as the mirror image of team A', () => {
+  const ex = BB.EXAMPLES.map((e) => e.source);
+  for (const arena of ['classic', 'random', 'open']) {
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const entries = [0, 1, 2, 3, 4, 5].map((i) => teamEntry(ex[i % 4], i, i < 3 ? 0 : 1));
+      const w = new BB.World({ entries, seed, arena });
+      const a = w.robots.filter((r) => r.team === 0), b = w.robots.filter((r) => r.team === 1);
+      a.forEach((r, i) => {
+        assert.ok(r.x < BB.CONFIG.ARENA_W / 2, `${arena}/${seed}: team A robot not on the left`);
+        assert.ok(Math.abs(b[i].x - (BB.CONFIG.ARENA_W - r.x)) < 1e-9 && Math.abs(b[i].y - (BB.CONFIG.ARENA_H - r.y)) < 1e-9,
+          `${arena}/${seed}: robot ${i} not mirrored`);
+        assert.strictEqual(b[i].heading, BB.geo.normAngle(r.heading + 180));
+      });
+    }
+  }
+});
+test('teammates are invisible to SCAN and excluded from ENEMIES; ALLIES counts them', () => {
+  const probe = `Probe
+SCAN 90
+GET R0, SCAN_DIST
+GET R1, ENEMIES
+GET R2, ALLIES
+WAIT`;
+  const w = new BB.World({ entries: [teamEntry(probe, 0, 0), teamEntry('Mate\nWAIT', 1, 0), teamEntry('Foe\nWAIT', 2, 1)], seed: 1, arena: 'open' });
+  const [me, mate, foe] = w.robots;
+  Object.assign(me, { x: 100, y: 300, turret: 0, targetTurret: 0 });
+  Object.assign(mate, { x: 200, y: 300 });   // straight ahead
+  Object.assign(foe, { x: 100, y: 550 });    // straight down: outside the cone
+  w.step();
+  assert.deepStrictEqual([me.vm.regs[0], me.vm.regs[1], me.vm.regs[2]], [-1, 1, 1]);
+});
+test('no friendly fire, and RADAR ignores teammates\' shots', () => {
+  const shooter = 'Shooter\nFIRE\nWAIT';
+  const watcher = 'Watcher\nRADAR\nGET R0, THREAT_DIST\nMAX R1, R0\nWAIT';
+  const w = new BB.World({ entries: [teamEntry(shooter, 0, 0), teamEntry(watcher, 1, 0), teamEntry('Foe\nWAIT', 2, 1)], seed: 1, arena: 'open' });
+  const [s, mate, foe] = w.robots;
+  Object.assign(s, { x: 100, y: 300, heading: 0, targetHeading: 0, turret: 0, targetTurret: 0 });
+  Object.assign(mate, { x: 250, y: 300 });
+  Object.assign(foe, { x: 400, y: 300 });    // behind the teammate, same line
+  mate.vm.regs[1] = -1;
+  for (let i = 0; i < 60; i++) w.step();
+  assert.strictEqual(mate.health, BB.CONFIG.MAX_HEALTH, 'teammate took damage');
+  assert.strictEqual(mate.vm.regs[1], -1, 'teammate saw its own side\'s bullets on RADAR');
+  assert.ok(foe.health < BB.CONFIG.MAX_HEALTH, 'bullets should pass the teammate and hit the enemy');
+});
+test('last team standing wins, even with a teammate down', () => {
+  const ex = BB.EXAMPLES.map((e) => e.source);
+  for (const seed of [1, 2, 3]) {
+    const entries = [0, 1, 2, 3].map((i) => teamEntry(ex[i], i, i < 2 ? 0 : 1));
+    const w = new BB.World({ entries, seed });
+    while (!w.over) w.step();
+    if (w.winnerTeam === null) continue;
+    assert.ok(w.robots.some((r) => r.alive && r.team === w.winnerTeam) || w.tick >= BB.CONFIG.MAX_TICKS);
+    assert.ok(w.robots.every((r) => !r.alive || r.team === w.winnerTeam) || w.tick >= BB.CONFIG.MAX_TICKS);
+    assert.strictEqual(w.winner, null);
+  }
+});
+test('a team match with only one team is practice mode', () => {
+  const w = new BB.World({ entries: [teamEntry('A\nWAIT', 0, 0), teamEntry('B\nWAIT', 1, 0)], seed: 1 });
+  assert.strictEqual(w.competitive, false);
+  for (let i = 0; i < 20; i++) w.step();
+  assert.strictEqual(w.over, false);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

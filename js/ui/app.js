@@ -18,6 +18,12 @@
   const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 4, 8, 20, 60]; // ticks per animation frame
   const DEFAULT_SPEED = 3;
   const MAX_STEPS_PER_FRAME = 200;
+  const MODES = {
+    ffa: { label: 'Free-for-all', size: 0 },
+    '2v2': { label: 'Teams 2v2', size: 2 },
+    '3v3': { label: 'Teams 3v3', size: 3 },
+  };
+  const TEAMS = ['A', 'B'];
 
   const $ = (sel) => document.querySelector(sel);
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -31,6 +37,7 @@
       this.speedIndex = DEFAULT_SPEED;
       this.acc = 0;
       this.selectedId = null;
+      this.mode = 'ffa';
       this.lastPanelUpdate = 0;
       this.renderedLogKey = null;
 
@@ -49,9 +56,10 @@
 
     compile(source) { return BB.assemble(source); }
 
-    addEntry(filename, source, { select = true, draft } = {}) {
-      const entry = { id: this.nextId++, filename, source, draft: draft ?? source, compiled: this.compile(source) };
+    addEntry(filename, source, { select = true, draft, team } = {}) {
+      const entry = { id: this.nextId++, filename, source, draft: draft ?? source, compiled: this.compile(source), team: null };
       this.entries.push(entry);
+      entry.team = team !== undefined ? team : this.openSlot();
       if (select) this.select(entry.id);
       return entry;
     }
@@ -74,6 +82,68 @@
       this.updateDebug();
     }
 
+    duplicateEntry(id) {
+      const e = this.entry(id);
+      if (!e) return;
+      const copy = this.addEntry(e.filename, e.source, { select: false, draft: e.draft });
+      // keep the copy next to the original
+      this.entries.splice(this.entries.indexOf(copy), 1);
+      this.entries.splice(this.entries.indexOf(e) + 1, 0, copy);
+      this.persist();
+      this.resetMatch();
+    }
+
+    // ------------------------------------------------------------ teams
+
+    get teamSize() { return MODES[this.mode].size; }
+
+    /** Team for a newly added robot: the first team with a free slot, else the bench. */
+    openSlot() {
+      if (!this.teamSize) return null;
+      for (const t of TEAMS) {
+        if (this.entries.filter((e) => e.team === t).length < this.teamSize) return t;
+      }
+      return null;
+    }
+
+    setTeam(id, team) {
+      const e = this.entry(id);
+      if (!e || e.team === team) return;
+      e.team = team;
+      this.persist();
+      this.resetMatch();
+    }
+
+    /** Fill both teams from the roster in order, keeping valid picks when they already fit. */
+    autoAssignTeams() {
+      const n = this.teamSize;
+      if (!n) return;
+      const valid = this.entries.filter((e) => !e.compiled.errors.length);
+      const fits = TEAMS.every((t) => valid.filter((e) => e.team === t).length === n);
+      if (fits) return;
+      for (const e of this.entries) e.team = null;
+      valid.slice(0, 2 * n).forEach((e, i) => { e.team = i < n ? 'A' : 'B'; });
+    }
+
+    /** Human-readable reason the team match can't start, or null. */
+    teamProblem() {
+      const n = this.teamSize;
+      if (!n) return null;
+      const count = (t) => this.entries.filter((e) => e.team === t && !e.compiled.errors.length).length;
+      const [a, b] = TEAMS.map(count);
+      if (a === n && b === n) return null;
+      return `${MODES[this.mode].label} needs ${n} working robots on each team (A has ${a}, B has ${b}). ` +
+        'Use the A / B / Bench buttons on the robot cards, or ⧉ to duplicate a robot.';
+    }
+
+    setMode(mode) {
+      this.mode = MODES[mode] ? mode : 'ffa';
+      $('#mode-type').value = this.mode;
+      this.autoAssignTeams();
+      this.persist();
+      this.resetMatch();
+    }
+
     removeEntry(id) {
       const e = this.entry(id);
       if (!e) return;
@@ -91,15 +161,21 @@
       this.acc = 0;
       const seed = parseInt($('#seed').value, 10) || 1;
       const valid = this.entries.filter((e) => !e.compiled.errors.length);
-      for (const e of this.entries) e.runningSource = e.compiled.errors.length ? null : e.source;
+      const playing = this.teamSize ? valid.filter((e) => e.team) : valid;
+      for (const e of this.entries) e.runningSource = playing.includes(e) ? e.source : null;
       this.world = new BB.World({
-        entries: valid.map((e) => ({ id: e.id, name: e.compiled.name, program: e.compiled.program })),
+        entries: playing.map((e) => ({
+          id: e.id, name: e.compiled.name, program: e.compiled.program,
+          team: this.teamSize ? TEAMS.indexOf(e.team) : undefined,
+        })),
         seed,
         arena: $('#arena-type').value,
       });
       this.renderer.clearEffects();
       const skipped = this.entries.length - valid.length;
       if (skipped) this.world.addLog(`${skipped} robot(s) skipped because of syntax errors.`, 'fault');
+      const problem = this.teamProblem();
+      if (problem) this.world.addLog(problem, 'fault');
       this.renderRoster();
       this.updatePanels(true);
     }
@@ -107,6 +183,8 @@
     toggleRun() {
       if (this.world.over) this.resetMatch();
       if (!this.world.robots.length) { this.flash('Add at least one robot first.'); return; }
+      const problem = !this.running && this.teamProblem();
+      if (problem) { this.flash(problem); return; }
       this.running = !this.running;
       this.updatePanels(true);
     }
@@ -249,7 +327,10 @@
       runBtn.textContent = this.running ? '❚❚ Pause' : (w && w.over ? '▶ Rematch' : '▶ Start');
       runBtn.classList.toggle('active', this.running);
       let status = 'Paused';
-      if (w && w.over) status = w.winner ? `🏆 ${w.winner.name} wins` : 'Draw';
+      if (w && w.over) {
+        if (w.teamMode) status = w.winnerTeam === null ? 'Draw' : `🏆 Team ${TEAMS[w.winnerTeam]} wins`;
+        else status = w.winner ? `🏆 ${w.winner.name} wins` : 'Draw';
+      }
       else if (this.running) status = 'Running';
       else if (w && w.tick === 0) status = w.robots.length ? 'Ready' : 'No robots';
       $('#status').textContent = status;
@@ -264,15 +345,22 @@
         box.innerHTML = '<div class="roster-empty">No robots yet. Load .asm files, add an example, or create a new robot.</div>';
         return;
       }
+      const teams = this.teamSize > 0;
+      const picker = (e) => !teams ? '' : `
+          <div class="team-pick">${[...TEAMS, null].map((t) => `
+            <button data-team="${t || ''}" class="${e.team === t ? 'on' : ''} ${t ? `team-${t.toLowerCase()}` : ''}"
+              title="${t ? `Play for team ${t}` : 'Sit this match out'}">${t || 'Bench'}</button>`).join('')}
+          </div>`;
       box.innerHTML = this.entries.map((e) => `
-        <div class="card ${e.id === this.selectedId ? 'selected' : ''}" data-id="${e.id}">
+        <div class="card ${e.id === this.selectedId ? 'selected' : ''} ${teams && e.team ? `team-${e.team.toLowerCase()}` : ''}" data-id="${e.id}">
           <div class="card-head">
             <span class="swatch"></span>
             <span class="card-name">${esc(e.compiled.name)}</span>
-            <button class="icon" data-act="remove" title="Remove robot">✕</button>
+            <button class="icon" data-act="dup" title="Duplicate robot">⧉</button>
+            <button class="icon danger" data-act="remove" title="Remove robot">✕</button>
           </div>
           <div class="hp"><div class="hp-fill"></div></div>
-          <div class="card-status"></div>
+          <div class="card-status"></div>${picker(e)}
         </div>`).join('');
       this.updateRosterLive();
     }
@@ -288,6 +376,8 @@
         let text, cls = '';
         if (e.compiled.errors.length) {
           text = `✗ ${e.compiled.errors.length} syntax error${e.compiled.errors.length > 1 ? 's' : ''}`; cls = 'bad';
+        } else if (!r && this.teamSize && !e.team) {
+          text = 'On the bench'; cls = 'muted';
         } else if (!r) {
           text = 'Not in arena (Reset)'; cls = 'muted';
         } else if (!r.alive) {
@@ -370,6 +460,7 @@
         ['Collisions', 'Hitting a wall or obstacle at speed ≥ 2 deals speed/2 damage. Ramming another robot deals 1 damage to both.'],
         ['Sensors', `SCAN cone up to ${C.SCAN_MAX_WIDTH}°, blocked by obstacles. RADAR range ${C.RADAR_RANGE}.`],
         ['Victory', `Last robot standing. After ${C.MAX_TICKS} ticks, highest health wins.`],
+        ['Teams', 'In 2v2 / 3v3, teammates are invisible to SCAN and RADAR, can\'t hurt each other, and don\'t count in ENEMIES (use ALLIES). Team B spawns as the mirror image of team A. Last team standing wins; at the time limit, highest total health.'],
       ].map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('') + '</table>';
       $('#reference').innerHTML = html;
     }
@@ -394,7 +485,8 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
           seed: $('#seed').value,
           arena: $('#arena-type').value,
-          entries: this.entries.map((e) => ({ filename: e.filename, source: e.source, draft: e.draft })),
+          mode: this.mode,
+          entries: this.entries.map((e) => ({ filename: e.filename, source: e.source, draft: e.draft, team: e.team })),
         }));
       } catch (_) { /* storage unavailable: nothing to do */ }
     }
@@ -405,7 +497,12 @@
       if (saved && Array.isArray(saved.entries) && saved.entries.length) {
         if (saved.seed) $('#seed').value = saved.seed;
         if (BB.World.ARENAS[saved.arena]) $('#arena-type').value = saved.arena;
-        for (const e of saved.entries) this.addEntry(e.filename, e.source, { select: false, draft: e.draft });
+        if (MODES[saved.mode]) this.mode = saved.mode;
+        $('#mode-type').value = this.mode;
+        for (const e of saved.entries) {
+          const team = TEAMS.includes(e.team) ? e.team : null;
+          this.addEntry(e.filename, e.source, { select: false, draft: e.draft, team });
+        }
       } else {
         for (const ex of BB.EXAMPLES) this.addEntry(ex.file, ex.source, { select: false });
       }
@@ -424,6 +521,9 @@
       arenaSel.innerHTML = Object.entries(BB.World.ARENAS)
         .map(([key, a]) => `<option value="${key}" title="${esc(a.desc)}">${esc(a.label)}</option>`).join('');
       arenaSel.onchange = () => { this.persist(); this.resetMatch(); };
+      const modeSel = $('#mode-type');
+      modeSel.innerHTML = Object.entries(MODES).map(([key, m]) => `<option value="${key}">${esc(m.label)}</option>`).join('');
+      modeSel.onchange = () => this.setMode(modeSel.value);
 
       const speed = $('#speed');
       speed.max = SPEEDS.length - 1;
@@ -459,6 +559,9 @@
         if (!card) return;
         const id = Number(card.dataset.id);
         if (ev.target.closest('[data-act="remove"]')) { ev.stopPropagation(); this.removeEntry(id); return; }
+        if (ev.target.closest('[data-act="dup"]')) { ev.stopPropagation(); this.duplicateEntry(id); return; }
+        const pick = ev.target.closest('[data-team]');
+        if (pick) { ev.stopPropagation(); this.setTeam(id, pick.dataset.team || null); return; }
         this.select(id);
       });
 

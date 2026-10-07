@@ -119,9 +119,10 @@
     { name: 'FRONT', desc: 'Free distance ahead of your body (to a wall or obstacle) along your heading.' },
     { name: 'LAST_HIT', desc: 'Ticks since you were last hit by a projectile, or -1 if never.' },
     { name: 'TICK', desc: 'Current simulation tick.' },
-    { name: 'ENEMIES', desc: 'Number of enemy robots still alive.' },
+    { name: 'ENEMIES', desc: 'Number of enemy robots still alive (teammates excluded).' },
     { name: 'ARENA_W', desc: 'Arena width (800).' },
     { name: 'ARENA_H', desc: 'Arena height (600).' },
+    { name: 'ALLIES', desc: 'Number of living teammates (always 0 in free-for-all).' },
   ];
   SENSORS.forEach((s, i) => { s.id = i; });
 

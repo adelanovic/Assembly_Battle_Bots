@@ -20,6 +20,12 @@
   const G = BB.geo;
 
   const COLORS = ['#ff5c5c', '#4fc3f7', '#ffd54f', '#81c784', '#ba68c8', '#ff9f43', '#4dd0e1', '#f06292'];
+  // Team matches: warm colours for team A, cool for team B.
+  const TEAM_NAMES = ['A', 'B'];
+  const TEAM_COLORS = [
+    ['#ff5c5c', '#ff9f43', '#f06292'],
+    ['#4fc3f7', '#81c784', '#4dd0e1'],
+  ];
 
   const DEFAULT_OBSTACLES = [
     { x: 360, y: 260, w: 80, h: 80 },
@@ -101,6 +107,7 @@
     constructor(id, entry, color) {
       this.id = id;
       this.entryId = entry.id;
+      this.team = entry.team === 0 || entry.team === 1 ? entry.team : null; // null = free-for-all
       this.name = entry.name;
       this.color = color;
       this.x = 0; this.y = 0;
@@ -124,7 +131,9 @@
   class World {
     /**
      * @param {object} opts
-     *   entries:   [{ id, name, program }] valid compiled robots
+     *   entries:   [{ id, name, program, team? }] valid compiled robots.
+     *              team 0 / 1 puts a robot on team A / B. Teammates don't
+     *              see each other on SCAN or RADAR and can't hurt each other.
      *   seed:      integer RNG seed (spawn positions, RAND)
      *   arena:     'classic' | 'random' | 'open'
      *   obstacles: optional explicit array of rects (overrides `arena`)
@@ -146,19 +155,36 @@
       this.nextProjectileId = 1;
 
       const used = new Map();
+      const teamCount = [0, 0];
       entries.forEach((entry, i) => {
-        const r = new Robot(i, entry, COLORS[i % COLORS.length]);
+        const t = entry.team;
+        const color = t === 0 || t === 1
+          ? TEAM_COLORS[t][teamCount[t]++ % TEAM_COLORS[t].length]
+          : COLORS[i % COLORS.length];
+        const r = new Robot(i, entry, color);
         const n = (used.get(entry.name) || 0) + 1;
         used.set(entry.name, n);
         if (n > 1) r.name = `${entry.name} (${n})`;
         r.vm = new BB.VM(entry.program, this.makeIO(r));
         this.robots.push(r);
       });
-      this.competitive = this.robots.length >= 2;
+      this.teamMode = this.robots.some((r) => r.team !== null);
+      this.winnerTeam = null;  // team matches: 0 / 1, or null for a draw
+      this.competitive = this.teamMode
+        ? this.robots.some((r) => r.team === 0) && this.robots.some((r) => r.team === 1)
+        : this.robots.length >= 2;
       this.spawnRobots();
-      this.addLog(this.competitive
-        ? `Match started with ${this.robots.length} robots (${ARENAS[this.arena].label} arena, seed ${seed}).`
-        : 'Practice mode: add a second robot for a real match.');
+      const where = `${ARENAS[this.arena].label} arena, seed ${seed}`;
+      if (!this.competitive) this.addLog('Practice mode: add an opponent for a real match.');
+      else if (this.teamMode) {
+        const size = (t) => this.robots.filter((r) => r.team === t).length;
+        this.addLog(`Team match ${size(0)}v${size(1)} started (${where}).`);
+      } else this.addLog(`Match started with ${this.robots.length} robots (${where}).`);
+    }
+
+    /** True if `b` is an opponent of `a` (teammates never are). */
+    isEnemy(a, b) {
+      return a !== b && (a.team === null || a.team !== b.team);
     }
 
     addLog(text, kind = 'info') {
@@ -177,24 +203,58 @@
     // ------------------------------------------------------------------ setup
 
     spawnRobots() {
-      const R = C.ROBOT_RADIUS;
-      const margin = 50;
-      for (const r of this.robots) {
-        let placed = false;
-        for (let attempt = 0; attempt < 500 && !placed; attempt++) {
-          const x = margin + this.rng() * (this.width - 2 * margin);
-          const y = margin + this.rng() * (this.height - 2 * margin);
-          const minSep = attempt < 300 ? 150 : 3 * R;
-          const clearObs = this.obstacles.every((o) => !G.circleRectPush(x, y, R + 12, o));
-          const clearBots = this.robots.every((b) => b === r || !b._placed || Math.hypot(b.x - x, b.y - y) > minSep);
-          if (clearObs && clearBots) { r.x = x; r.y = y; placed = true; }
-        }
-        if (!placed) { r.x = this.width / 2; r.y = 30; }
-        r._placed = true;
-        r.heading = r.targetHeading = Math.floor(this.rng() * 360);
-        r.turret = r.targetTurret = r.heading;
-      }
+      if (this.teamMode) this.spawnTeams();
+      else for (const r of this.robots) this.placeRandomly(r, 0, this.width);
       for (const r of this.robots) delete r._placed;
+    }
+
+    /** Clear of obstacles (with a margin) and not on top of a placed robot. */
+    spotIsFree(x, y, minSep) {
+      const R = C.ROBOT_RADIUS;
+      return this.obstacles.every((o) => !G.circleRectPush(x, y, R + 12, o)) &&
+        this.robots.every((b) => !b._placed || Math.hypot(b.x - x, b.y - y) > minSep);
+    }
+
+    /** Random free spot with x in [xMin, xMax], random heading. */
+    placeRandomly(r, xMin, xMax) {
+      const margin = 50;
+      const lo = Math.max(margin, xMin), hi = Math.min(this.width - margin, xMax);
+      let placed = false;
+      for (let attempt = 0; attempt < 500 && !placed; attempt++) {
+        const x = lo + this.rng() * (hi - lo);
+        const y = margin + this.rng() * (this.height - 2 * margin);
+        if (this.spotIsFree(x, y, attempt < 300 ? 150 : 3 * C.ROBOT_RADIUS)) { r.x = x; r.y = y; placed = true; }
+      }
+      if (!placed) { r.x = this.width / 2; r.y = 30; }
+      r._placed = true;
+      r.heading = r.targetHeading = Math.floor(this.rng() * 360);
+      r.turret = r.targetTurret = r.heading;
+    }
+
+    /**
+     * Team A spawns in the left half; each team B robot takes the mirror
+     * image (through the arena centre) of its team A counterpart, facing the
+     * mirrored direction. Every built-in arena layout is point-symmetric, so
+     * both sides get exactly the same terrain.
+     */
+    spawnTeams() {
+      const a = this.robots.filter((r) => r.team === 0);
+      const b = this.robots.filter((r) => r.team === 1);
+      const mid = this.width / 2;
+      for (const r of a) this.placeRandomly(r, 0, mid - 40);
+      b.forEach((r, i) => {
+        const twin = a[i];
+        if (twin) {
+          const x = this.width - twin.x, y = this.height - twin.y;
+          if (this.spotIsFree(x, y, 3 * C.ROBOT_RADIUS)) {
+            r.x = x; r.y = y; r._placed = true;
+            r.heading = r.targetHeading = G.normAngle(twin.heading + 180);
+            r.turret = r.targetTurret = r.heading;
+            return;
+          }
+        }
+        this.placeRandomly(r, mid + 40, this.width);
+      });
     }
 
     // ---------------------------------------------------------------- VM I/O
@@ -238,7 +298,8 @@
         case 'FRONT': return round(this.freeDistance(r));
         case 'LAST_HIT': return r.lastHitTick < 0 ? -1 : this.tick - r.lastHitTick;
         case 'TICK': return this.tick;
-        case 'ENEMIES': return this.robots.filter((o) => o.alive && o !== r).length;
+        case 'ENEMIES': return this.robots.filter((o) => o.alive && this.isEnemy(r, o)).length;
+        case 'ALLIES': return this.robots.filter((o) => o.alive && o !== r && !this.isEnemy(r, o)).length;
         case 'ARENA_W': return this.width;
         case 'ARENA_H': return this.height;
         default: return 0;
@@ -265,7 +326,7 @@
       const w = Math.max(1, Math.min(C.SCAN_MAX_WIDTH, width | 0));
       let best = null, bestD = Infinity;
       for (const o of this.robots) {
-        if (o === r || !o.alive) continue;
+        if (!o.alive || !this.isEnemy(r, o)) continue;
         const d = Math.hypot(o.x - r.x, o.y - r.y);
         const ang = G.angleTo(r.x, r.y, o.x, o.y);
         // The cone hits if any part of the target's body is inside it.
@@ -291,7 +352,7 @@
     doRadar(r) {
       let best = null, bestD = C.RADAR_RANGE;
       for (const p of this.projectiles) {
-        if (p.owner === r.id) continue;
+        if (!this.isEnemy(r, this.robots[p.owner])) continue; // own and teammates' shots are harmless
         const d = Math.hypot(p.x - r.x, p.y - r.y);
         if (d > bestD) continue;
         // Approaching: velocity points toward us.
@@ -388,7 +449,7 @@
           const push = (R2 - d) / 2;
           a.x -= nx * push; a.y -= ny * push;
           b.x += nx * push; b.y += ny * push;
-          if (closing > 1) {
+          if (closing > 1 && this.isEnemy(a, b)) {
             this.damage(a, 1, b, 'ram');
             this.damage(b, 1, a, 'ram');
             this.emit({ type: 'bump', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
@@ -431,7 +492,7 @@
             continue outer;
           }
           for (const r of this.robots) {
-            if (!r.alive || r.id === p.owner) continue;
+            if (!r.alive || !this.isEnemy(r, this.robots[p.owner])) continue; // no friendly fire
             if ((r.x - p.x) ** 2 + (r.y - p.y) ** 2 <= R * R) {
               const shooter = this.robots[p.owner];
               shooter.stats.hits++;
@@ -462,6 +523,7 @@
 
     checkVictory() {
       if (!this.competitive) return;
+      if (this.teamMode) { this.checkTeamVictory(); return; }
       const alive = this.robots.filter((r) => r.alive);
       if (alive.length <= 1) {
         this.finish(alive[0] || null, alive.length ? 'last robot standing' : 'everyone was destroyed');
@@ -470,6 +532,23 @@
         const tie = alive[0].health === alive[1].health;
         this.finish(tie ? null : alive[0], 'time limit reached, highest health wins');
       }
+    }
+
+    checkTeamVictory() {
+      const alive = [0, 1].map((t) => this.robots.filter((r) => r.alive && r.team === t));
+      if (!alive[0].length || !alive[1].length) {
+        const t = alive[0].length ? 0 : alive[1].length ? 1 : null;
+        this.finishTeams(t, t === null ? 'everyone was destroyed' : 'last team standing');
+      } else if (this.tick >= C.MAX_TICKS) {
+        const hp = alive.map((list) => list.reduce((sum, r) => sum + r.health, 0));
+        this.finishTeams(hp[0] === hp[1] ? null : hp[0] > hp[1] ? 0 : 1, 'time limit reached, highest total health wins');
+      }
+    }
+
+    finishTeams(team, reason) {
+      this.over = true;
+      this.winnerTeam = team;
+      this.addLog(team === null ? `Draw (${reason}).` : `🏆 Team ${TEAM_NAMES[team]} wins (${reason}).`, 'win');
     }
 
     finish(winner, reason) {
@@ -483,5 +562,7 @@
   World.ARENAS = ARENAS;
   World.makeObstacles = makeObstacles;
   World.COLORS = COLORS;
+  World.TEAM_NAMES = TEAM_NAMES;
+  World.TEAM_COLORS = TEAM_COLORS;
   BB.World = World;
 })(globalThis.BB = globalThis.BB || {});
