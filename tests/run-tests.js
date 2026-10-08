@@ -164,7 +164,7 @@ test('robot actions go through io', () => {
 });
 
 console.log('World');
-const compile = (src, id) => { const r = BB.assemble(src); return { id, name: r.name, program: r.program }; };
+const compile = (src, id) => { const r = BB.assemble(src); return { id, name: r.name, program: r.program, appearance: r.appearance }; };
 test('a faulty / looping robot does not affect others', () => {
   const looper = compile('Looper\nl: JMP l', 0);
   const crasher = compile('Crasher\nDIV R0, 0', 1);
@@ -620,6 +620,95 @@ test('CLI rejects malformed and missing integer options before reading robot fil
   });
   assert.strictEqual(overflow.status, 2);
   assert.match(overflow.stderr, /seed range/);
+});
+
+test('appearance presets are optional, case-insensitive metadata with unchanged instruction indices', () => {
+  assert.deepStrictEqual(BB.assemble('A\nWAIT').appearance, { shape: 'tank', drive: 'tracks', turret: 'standard' });
+  const code = 'main: INC R0\nWAIT\nJMP main';
+  const baseline = BB.assemble(`A\n${code}`).program.map(({ op, args, cost }) => ({ op, args, cost }));
+  for (const shape of BB.ISA.APPEARANCE.shape.choices) for (const drive of BB.ISA.APPEARANCE.drive.choices) for (const turret of BB.ISA.APPEARANCE.turret.choices) {
+    const result = BB.assemble(`A\n.SHAPE ${shape.toUpperCase()} ; hull\n\n# comment\n.drive ${drive}\n.turret ${turret}\n${code}`);
+    assert.deepStrictEqual(result.errors, []);
+    assert.deepStrictEqual(result.appearance, { shape, drive, turret });
+    assert.deepStrictEqual(result.program.map(({ op, args, cost }) => ({ op, args, cost })), baseline);
+    assert.strictEqual(result.program[0].line, 7);
+  }
+});
+
+test('appearance errors preserve source lines and reject invalid, repeated and late headers', () => {
+  for (const [source, line] of [
+    ['A\n.shape triangle\nWAIT', 2], ['A\n.drive\nWAIT', 2], ['A\n.turret twin extra\nWAIT', 2],
+    ['A\n.shape circle\n.shape wedge\nWAIT', 3], ['A\nWAIT\n.drive hover', 3],
+    ['A\n.def K 1\n.shape circle\nWAIT', 3], ['A\nmain:\n.turret twin\nWAIT', 3],
+    ['A\nmain: .shape circle\nWAIT', 2], ['A\n.constructor whatever\nWAIT', 2],
+    ['A\n.__proto__ whatever\nWAIT', 2],
+  ]) {
+    const result = BB.assemble(source);
+    assert.ok(result.errors.some((error) => error.line === line), source);
+    assert.deepStrictEqual(result.program, []);
+  }
+  assert.match(errorsOf('A\n.shape circle')[0].message, /no instructions/);
+});
+
+test('cosmetic presets leave complete seeded match outcomes and physics unchanged', () => {
+  for (const arena of ['classic', 'random', 'open']) for (const seed of [1, 7, 42]) {
+    const run = (customize) => {
+      const entries = BB.EXAMPLES.map((ex, id) => {
+        let source = ex.source;
+        if (customize) source = source
+          .replace(/^\.shape .*$/m, `.shape ${['circle', 'hexagon', 'wedge', 'tank'][id]}`)
+          .replace(/^\.drive .*$/m, `.drive ${['hover', 'wheels', 'tracks', 'wheels'][id]}`)
+          .replace(/^\.turret .*$/m, '.turret twin');
+        return compile(source, id);
+      });
+      const world = new BB.World({ entries, seed, arena });
+      while (!world.over) world.step();
+      return { tick: world.tick, winner: world.winner && world.winner.entryId,
+        robots: world.robots.map((r) => ({ x: r.x, y: r.y, health: r.health, stats: r.stats, regs: [...r.vm.regs], cooldown: r.cooldown, fault: r.vm.fault })) };
+    };
+    assert.deepStrictEqual(run(true), run(false), `${arena}/${seed}`);
+  }
+});
+
+test('appearance hot-swaps and survives duplication without changing the robot body', () => {
+  const app = uiHarness();
+  app.world.step();
+  const robot = app.robotFor(0), body = [robot.x, robot.y, robot.health];
+  app.selected.draft = 'A\n.shape wedge\n.drive hover\n.turret twin\nWAIT';
+  app.applyDraft();
+  assert.deepStrictEqual({ ...robot.appearance }, { shape: 'wedge', drive: 'hover', turret: 'twin' });
+  assert.deepStrictEqual([robot.x, robot.y, robot.health], body);
+  app.nextId = 2;
+  app.resetMatch = () => {};
+  app.duplicateEntry(0);
+  assert.strictEqual(app.entries.length, 2);
+  assert.deepStrictEqual(app.entries[1].compiled.appearance, { ...robot.appearance });
+  assert.strictEqual(app.entries[1].source, app.entries[0].source);
+});
+
+test('all appearance combinations render normal, damaged, flashing and wreck states', () => {
+  const renderingBB = { ...BB };
+  scriptVm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/ui/renderer.js'), 'utf8'), { BB: renderingBB });
+  const renderer = Object.create(renderingBB.Renderer.prototype);
+  renderer.robotFx = new Map();
+  let calls = 0;
+  const context = new Proxy({}, { get(target, key) {
+    if (String(key).startsWith('create')) return () => ({ addColorStop() {} });
+    return (...args) => { calls++; for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value)); };
+  } });
+  for (const shape of BB.ISA.APPEARANCE.shape.choices) for (const drive of BB.ISA.APPEARANCE.drive.choices) for (const turret of BB.ISA.APPEARANCE.turret.choices) {
+    const source = `A\n.shape ${shape}\n.drive ${drive}\n.turret ${turret}\nWAIT`;
+    const world = new BB.World({ entries: [compile(source, 0)] });
+    const robot = world.robots[0];
+    for (const health of [100, 20]) {
+      robot.health = health;
+      renderer.fx(robot.id).flash = 4;
+      renderer.fx(robot.id).muzzle = 3;
+      renderer.drawRobot(context, robot, true, 1000);
+    }
+    renderer.drawWreck(context, robot);
+  }
+  assert.ok(calls > 1000);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

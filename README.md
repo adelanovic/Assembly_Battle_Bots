@@ -54,6 +54,27 @@ The arena shows each robot as a tank. The hull points where it's driving, and th
 
 ## Robot files
 
+Customize your bot with up to three optional lines below its name, before any labels, constants or instructions:
+
+```asm
+Iron Beetle
+.shape hexagon
+.drive wheels
+.turret twin
+
+main:
+    WAIT
+    JMP main
+```
+
+| Setting | Presets | Default |
+|---|---|---|
+| `.shape` | `tank`, `circle`, `hexagon`, `wedge` | `tank` |
+| `.drive` | `tracks`, `wheels`, `hover` | `tracks` |
+| `.turret` | `standard`, `short`, `twin` | `standard` |
+
+These are cosmetic: every bot keeps the same collision radius, movement, bullet origin and weapon stats. Twin turrets still fire one shot. Each setting may appear once; comments and blank lines are allowed between them. Omitted settings retain the default tank appearance. Appearance is saved in the robot source and updates when you press **Apply**.
+
 ```asm
 Sniper Sam                ; line 1 = robot name
 .def RANGE 300            ; optional constants
@@ -87,12 +108,12 @@ There is no "dodge" instruction. Robots dodge by calling `RADAR` to find an inco
 
 ### Example robots (`examples/`)
 
-| Robot | Strategy |
-|---|---|
-| **Sentinel** | Stationary sniper. Narrow sweeping scan, leads moving targets, sidesteps bullets (and reverses when that needs less turning). |
-| **Hunter** | Aggressive chaser. Wide scan, charges straight at the enemy, fires when lined up, never dodges. |
-| **Dodger** | Evasive skirmisher. Always moving, bounces off walls, swerves away from every projectile, independent turret. |
-| **Orbiter** | Circle-strafer. Locks on, orbits at about 200 units while firing, flips direction near walls. |
+| Robot | Appearance | Strategy |
+|---|---|---|
+| **Sentinel** | Hexagon, tracks, standard turret | Stationary sniper. Narrow sweeping scan, leads moving targets, sidesteps bullets (and reverses when that needs less turning). |
+| **Hunter** | Wedge, wheels, twin turret | Aggressive chaser. Wide scan, charges straight at the enemy, fires when lined up, never dodges. |
+| **Dodger** | Circle, wheels, short turret | Evasive skirmisher. Always moving, bounces off walls, swerves away from every projectile, independent turret. |
+| **Orbiter** | Tank, hover, standard turret | Circle-strafer. Locks on, orbits at about 200 units while firing, flips direction near walls. |
 
 ## Rules of the arena
 

@@ -228,52 +228,44 @@
       }
 
       // treads, with tread marks that scroll as the robot drives
-      const odo = r.x * Math.cos(r.heading * DEG) + r.y * Math.sin(r.heading * DEG);
-      const phase = ((odo % 5) + 5) % 5;
-      for (const side of [-1, 1]) {
-        const y0 = side < 0 ? -TREAD.outer : TREAD.inner;
-        ctx.fillStyle = '#1a1e26';
-        roundRect(ctx, TREAD.x, y0, TREAD.len, TREAD.outer - TREAD.inner, 2.5);
-        ctx.fill();
-        ctx.strokeStyle = '#3a414e';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        for (let x = TREAD.x + 2 - phase + 5; x < TREAD.x + TREAD.len - 1; x += 5) {
-          ctx.moveTo(x, y0 + 1); ctx.lineTo(x, y0 + TREAD.outer - TREAD.inner - 1);
-        }
-        ctx.stroke();
-      }
+      this.drawDrive(ctx, r);
 
       // hull
       const grad = ctx.createLinearGradient(0, HULL.y, 0, HULL.y + HULL.h);
       grad.addColorStop(0, shade(r.color, 0.25));
       grad.addColorStop(1, shade(r.color, -0.25));
       ctx.fillStyle = grad;
-      roundRect(ctx, HULL.x, HULL.y, HULL.w, HULL.h, HULL.r);
+      this.hullPath(ctx, r);
       ctx.fill();
       ctx.strokeStyle = '#0b0d12';
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
-      // nose: headlights mark the front
+      // Headlights mark the front for every hull shape.
       ctx.fillStyle = '#fff7d1';
-      ctx.fillRect(HULL.x + HULL.w - 3, -7, 2, 3);
-      ctx.fillRect(HULL.x + HULL.w - 3, 4, 2, 3);
+      const shape = r.appearance ? r.appearance.shape : 'tank';
+      const lightX = shape === 'tank' ? 9 : shape === 'wedge' ? 6 : 8;
+      const lightY = shape === 'tank' ? [-7, 4] : shape === 'wedge' ? [-2.5, 1] : [-5, 2];
+      for (const y of lightY) ctx.fillRect(lightX, y, 2, shape === 'wedge' ? 1.5 : 3);
 
       // battle damage
       if (hp < 0.5) {
+        ctx.save();
+        this.hullPath(ctx, r);
+        ctx.clip();
         ctx.fillStyle = 'rgba(15,10,8,0.55)';
         const n = hp < 0.25 ? 3 : 2;
         for (let i = 0; i < n; i++) {
           const a = (r.id * 2.3 + i * 2.1), d = 4 + (i * 3) % 6;
           ctx.beginPath(); ctx.ellipse(Math.cos(a) * d - 2, Math.sin(a) * d * 0.7, 3.5, 2.5, a, 0, TAU); ctx.fill();
         }
+        ctx.restore();
       }
 
       // hit flash
       if (f.flash > 0) {
         ctx.fillStyle = `rgba(255,255,255,${(f.flash / 6) * 0.75})`;
-        roundRect(ctx, HULL.x, HULL.y, HULL.w, HULL.h, HULL.r);
+        this.hullPath(ctx, r);
         ctx.fill();
       }
 
@@ -287,13 +279,7 @@
         ctx.lineTo(R + 7 + s, -s * 0.55); ctx.lineTo(R + 9 + s * 1.4, 0); ctx.lineTo(R + 7 + s, s * 0.55);
         ctx.closePath(); ctx.fill();
       }
-      ctx.fillStyle = '#cdd4df';
-      ctx.strokeStyle = '#0b0d12';
-      ctx.lineWidth = 1.2;
-      roundRect(ctx, 2, -2, R + 3, 4, 1.5);
-      ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#8e97a6';
-      ctx.fillRect(R + 1, -2.5, 4, 5); // muzzle brake
+      this.drawBarrels(ctx, r);
       const dome = ctx.createRadialGradient(-1.5, -1.5, 0.5, 0, 0, 6.5);
       dome.addColorStop(0, shade(r.color, 0.7));
       dome.addColorStop(1, shade(r.color, 0.15));
@@ -303,6 +289,70 @@
       ctx.beginPath(); ctx.arc(-1, 0, 1.8, 0, TAU); ctx.fill();
 
       ctx.restore();
+    }
+
+    hullPath(ctx, r) {
+      const shape = r.appearance ? r.appearance.shape : 'tank';
+      if (shape === 'circle') {
+        ctx.beginPath(); ctx.arc(0, 0, 12, 0, TAU);
+      } else if (shape === 'hexagon' || shape === 'wedge') {
+        const points = shape === 'hexagon'
+          ? [[12, 0], [6, 11], [-6, 11], [-12, 0], [-6, -11], [6, -11]]
+          : [[14, 0], [-9, 11], [-13, 7], [-13, -7], [-9, -11]];
+        ctx.beginPath();
+        points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+        ctx.closePath();
+      } else roundRect(ctx, HULL.x, HULL.y, HULL.w, HULL.h, HULL.r);
+    }
+
+    drawDrive(ctx, r, wreck = false) {
+      const drive = r.appearance ? r.appearance.drive : 'tracks';
+      if (drive === 'hover') {
+        ctx.fillStyle = wreck ? '#16191f' : hexA(r.color, 0.2);
+        ctx.strokeStyle = wreck ? '#3a414e' : hexA(r.color, 0.65);
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(0, 0, 15, 12, 0, 0, TAU); ctx.fill(); ctx.stroke();
+        return;
+      }
+      if (drive === 'wheels') {
+        for (const x of [-8, 8]) for (const y of [-12, 12]) {
+          ctx.fillStyle = wreck ? '#16191f' : '#1a1e26';
+          roundRect(ctx, x - 3, y - 2.5, 6, 5, 1.5); ctx.fill();
+          ctx.strokeStyle = '#59677c'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(x, y - 2); ctx.lineTo(x, y + 2); ctx.stroke();
+        }
+        return;
+      }
+      const odo = r.x * Math.cos(r.heading * DEG) + r.y * Math.sin(r.heading * DEG);
+      const phase = ((odo % 5) + 5) % 5;
+      for (const side of [-1, 1]) {
+        const y0 = side < 0 ? -TREAD.outer : TREAD.inner;
+        ctx.fillStyle = wreck ? '#16191f' : '#1a1e26';
+        roundRect(ctx, TREAD.x, y0, TREAD.len, TREAD.outer - TREAD.inner, 2.5);
+        ctx.fill();
+        ctx.strokeStyle = '#3a414e';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let x = TREAD.x + 2 - phase + 5; x < TREAD.x + TREAD.len - 1; x += 5) {
+          ctx.moveTo(x, y0 + 1); ctx.lineTo(x, y0 + TREAD.outer - TREAD.inner - 1);
+        }
+        ctx.stroke();
+      }
+
+    }
+
+    drawBarrels(ctx, r, wreck = false) {
+      const turret = r.appearance ? r.appearance.turret : 'standard';
+      const end = turret === 'short' ? 13 : C.ROBOT_RADIUS + 5;
+      const width = turret === 'twin' ? 3 : 4;
+      ctx.strokeStyle = '#0b0d12'; ctx.lineWidth = 1.2;
+      for (const y of turret === 'twin' ? [-3.5, 3.5] : [0]) {
+        ctx.fillStyle = wreck ? '#3a3f49' : '#cdd4df';
+        roundRect(ctx, 2, y - width / 2, end - 2, width, 1.5);
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = wreck ? '#3a3f49' : '#8e97a6';
+        ctx.fillRect(end - 4, y - width / 2 - 0.5, 4, width + 1);
+      }
     }
 
     drawLabel(ctx, r, now) {
@@ -343,9 +393,9 @@
 
       ctx.rotate(r.heading * DEG);
       ctx.fillStyle = '#16191f';
-      for (const y0 of [-TREAD.outer, TREAD.inner]) { roundRect(ctx, TREAD.x, y0, TREAD.len, 6, 2.5); ctx.fill(); }
+      this.drawDrive(ctx, r, true);
       ctx.fillStyle = '#2a2e36';
-      roundRect(ctx, HULL.x, HULL.y, HULL.w, HULL.h, HULL.r);
+      this.hullPath(ctx, r);
       ctx.fill();
       ctx.strokeStyle = '#0b0d12';
       ctx.lineWidth = 1.5;
@@ -354,7 +404,7 @@
       ctx.fillRect(HULL.x + 3, HULL.y + 3, 6, 4);
       ctx.rotate((r.turret - r.heading + 35) * DEG); // turret knocked askew
       ctx.fillStyle = '#3a3f49';
-      ctx.fillRect(2, -2, C.ROBOT_RADIUS + 2, 4);
+      this.drawBarrels(ctx, r, true);
       ctx.beginPath(); ctx.arc(0, 0, 6.5, 0, TAU); ctx.fill();
       ctx.restore();
 

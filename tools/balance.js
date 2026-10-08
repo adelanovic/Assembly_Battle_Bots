@@ -17,7 +17,7 @@ function compile(sources) {
   return sources.map((source, id) => {
     const result = BB.assemble(source);
     if (result.errors.length) throw new Error(JSON.stringify(result.errors));
-    return { id, name: result.name, program: result.program };
+    return { id, name: result.name, program: result.program, appearance: result.appearance };
   });
 }
 const originalSources = BB.EXAMPLES.map((ex) => ex.source);

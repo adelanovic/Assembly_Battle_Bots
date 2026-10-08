@@ -1,4 +1,7 @@
 Dodger
+.shape circle
+.drive wheels
+.turret short
 ; STRATEGY: evasive skirmisher.
 ; Always on the move: bounces off walls, wanders randomly, swerves away
 ; from every incoming projectile, and snipes with an independent turret.

@@ -73,6 +73,9 @@
     const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
     const errors = [];
     const warnings = [];
+    const appearance = Object.fromEntries(Object.entries(BB.ISA.APPEARANCE).map(([key, spec]) => [key, spec.default]));
+    const appearanceSeen = new Set();
+    let inHeader = true;
     const err = (line, message) => errors.push({ line, message });
 
     // ---- Line 1: robot name ----
@@ -110,6 +113,20 @@
       let text = stripComment(raw).trim();
       if (!text) continue;
 
+      const header = /^(\.\S+)(?:\s+(.*))?$/.exec(text);
+      const key = header && header[1].slice(1).toLowerCase();
+      const appearanceSpec = key && Object.prototype.hasOwnProperty.call(BB.ISA.APPEARANCE, key) && BB.ISA.APPEARANCE[key];
+      if (appearanceSpec) {
+        const value = (header[2] || '').trim().toLowerCase();
+        if (!inHeader) err(lineNo, `.${key} must appear in the appearance header below the name, before labels, constants or instructions.`);
+        else if (appearanceSeen.has(key)) err(lineNo, `.${key} is already specified.`);
+        else if (!appearanceSpec.choices.includes(value)) err(lineNo, `.${key} expects one preset: ${appearanceSpec.choices.join(', ')}.`);
+        else appearance[key] = value;
+        appearanceSeen.add(key);
+        continue;
+      }
+      inHeader = false;
+
       // Leading labels: "loop:", "a: b: MOV R0, 1"
       let m;
       while ((m = /^([^\s:,\[\]]+)\s*:/.exec(text))) {
@@ -135,7 +152,7 @@
           }
           if (checkNewName(lineNo, id, 'constant')) constants[id] = v;
         } else {
-          err(lineNo, `Unknown directive "${parts[0]}". Supported: .def NAME value`);
+          err(lineNo, `Unknown directive "${parts[0]}". Supported: .def NAME value; header presets .shape, .drive, .turret.`);
         }
         continue;
       }
@@ -275,7 +292,7 @@
     }
 
     errors.sort((a, b) => a.line - b.line);
-    return { name, program: errors.length ? [] : program, errors, warnings };
+    return { name, appearance, program: errors.length ? [] : program, errors, warnings };
   }
 
   BB.assemble = assemble;

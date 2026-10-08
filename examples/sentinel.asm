@@ -1,4 +1,7 @@
 Sentinel
+.shape hexagon
+.drive tracks
+.turret standard
 ; STRATEGY: turret sniper.
 ; Holds its ground, sweeps the turret with a narrow scan, leads moving
 ; targets (predicts where they will be when the bullet arrives) and

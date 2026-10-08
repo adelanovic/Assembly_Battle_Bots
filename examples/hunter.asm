@@ -1,4 +1,7 @@
 Hunter
+.shape wedge
+.drive wheels
+.turret twin
 ; STRATEGY: aggressive chaser.
 ; Sweeps a wide scan, charges at the nearest enemy and opens fire as soon
 ; as the turret lines up. Never dodges: it trusts speed and firepower.

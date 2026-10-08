@@ -6,6 +6,9 @@
   'use strict';
 
   const SENTINEL = `Sentinel
+.shape hexagon
+.drive tracks
+.turret standard
 ; STRATEGY: turret sniper.
 ; Holds its ground, sweeps the turret with a narrow scan, leads moving
 ; targets (predicts where they will be when the bullet arrives) and
@@ -124,6 +127,9 @@ dodge_end:
 `;
 
   const HUNTER = `Hunter
+.shape wedge
+.drive wheels
+.turret twin
 ; STRATEGY: aggressive chaser.
 ; Sweeps a wide scan, charges at the nearest enemy and opens fire as soon
 ; as the turret lines up. Never dodges: it trusts speed and firepower.
@@ -175,6 +181,9 @@ search:
 `;
 
   const DODGER = `Dodger
+.shape circle
+.drive wheels
+.turret short
 ; STRATEGY: evasive skirmisher.
 ; Always on the move: bounces off walls, wanders randomly, swerves away
 ; from every incoming projectile, and snipes with an independent turret.
@@ -258,6 +267,9 @@ dodge_go:
 `;
 
   const ORBITER = `Orbiter
+.shape tank
+.drive hover
+.turret standard
 ; STRATEGY: circle-strafer.
 ; Locks onto an enemy and orbits it at a preferred distance while firing.
 ; Moving sideways makes it hard to hit; reverses direction near walls.
@@ -342,6 +354,9 @@ walls_done:
 
   // Starting point for "+ New robot" (covered by the test suite).
   const NEW_ROBOT_TEMPLATE = `NewBot
+.shape tank
+.drive tracks
+.turret standard
 ; Line 1 is the robot's name. Write your program below.
 ; Open the Reference tab for every instruction and sensor.
 

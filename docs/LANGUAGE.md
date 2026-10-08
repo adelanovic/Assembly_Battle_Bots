@@ -5,6 +5,7 @@
 ## Program structure
 
 - Line 1 is the robot's name (required, truncated to 24 characters with a warning). The whole trimmed line is the name; do not add an inline comment. Leading ; or # markers are stripped. Code starts on line 2.
+- Optional appearance header below the name: `.shape tank`, `.drive tracks`, `.turret standard`. Each accepts a preset and may appear once, before any label, constant or instruction. Comments and blank lines are allowed between header directives. Appearance is cosmetic and uses no CPU cycles.
 - From line 2 onward, comments start with `;` or `#` and continue to the end of the line. Blank lines are ignored. Mnemonics, registers, sensors, labels and constants are case-insensitive. Separate operands with commas.
 - Labels end with a colon (`loop:`) and may share a line with an instruction. Names use letters, digits and underscores, starting with a letter or underscore. Labels and constants cannot share names or use instruction/register names.
 - Constants: `.def NAME value` (`.const` and `.equ` are aliases). The value must be a numeric literal. Constants may be referenced before their definition and used as source values or memory addresses/offsets, but not as jump targets or sensor operands.
@@ -14,6 +15,107 @@
 - Each robot gets at most 50 cycles per tick. Most instructions cost 1 cycle; SCAN and RADAR cost 3. An instruction that does not fit waits until the next tick. WAIT yields unused cycles; budget exhaustion resumes at the next pending instruction.
 - Angles: 0° points right (east), 90° points down (south), increasing clockwise. Positions use screen coordinates with (0,0) at the top-left.
 - Runtime errors such as division by zero or a stack overflow fault the robot. Its CPU stops and the robot keeps drifting with its last orders. Other robots are unaffected.
+
+### Appearance header
+
+Choose up to three cosmetic presets immediately below the name. Comments and blank lines may appear between them. Values and directive names are case-insensitive. Each directive may appear once, before any label, constant or instruction. Omitted settings use the defaults below.
+
+| Directive | Presets | Default |
+|---|---|---|
+| `.shape preset` | `tank`, `circle`, `hexagon`, `wedge` | `tank` |
+| `.drive preset` | `tracks`, `wheels`, `hover` | `tracks` |
+| `.turret preset` | `standard`, `short`, `twin` | `standard` |
+
+```asm
+Iron Beetle
+.shape hexagon
+.drive wheels
+.turret twin
+
+main:
+    WAIT
+    JMP main
+```
+
+Appearance directives are metadata, not executable instructions: they consume no CPU cycles and do not change instruction indices. Collision radius, movement, health, bullet origin, fire rate and damage remain identical for every preset. A twin turret still fires one projectile per shot. Settings travel with the `.asm` file and take effect on Apply, including a program reload during a match.
+
+#### Hull shapes: `.shape`
+
+The hull rotates with your body heading (`HEADING`). The turret continues to rotate independently. These presets change the visible body outline; the physical hitbox stays a circle with radius 16.
+
+| Preset | Appearance |
+|---|---|
+| `tank` | The original compact rectangular hull with rounded corners. Default. |
+| `circle` | A round hull around the turret. Headlights still indicate the front. |
+| `hexagon` | A six-sided hull with a point facing forward and another facing backward. |
+| `wedge` | A pointed nose facing forward with a broad rear. |
+
+#### Drive styles: `.drive`
+
+The drive is drawn beneath the hull and follows the body heading. Every style uses the same speed limits, acceleration, turning and terrain collisions.
+
+| Preset | Appearance |
+|---|---|
+| `tracks` | Two dark side treads with tread marks that scroll with movement. Default. |
+| `wheels` | Four small wheels, two along each side of the hull. |
+| `hover` | An oval platform with a colored rim beneath the hull. It still collides with walls, obstacles and other robots; it does not fly over them. |
+
+#### Turret styles: `.turret`
+
+The turret follows `TURRET` and your `AIM` commands independently of the hull. These settings change the barrel drawing, not the weapon or its aiming speed.
+
+| Preset | Appearance |
+|---|---|
+| `standard` | One full-length barrel on the central turret dome. Default. |
+| `short` | One shorter barrel on the same dome. Range, bullet speed, damage and bullet origin are unchanged. |
+| `twin` | Two parallel full-length barrels. Each successful FIRE still creates one projectile from the normal central bullet origin, with the normal cooldown. |
+
+All 36 combinations are supported. Team/roster colors are assigned by the game; these directives do not select paint colors. Hit flashes follow your hull shape, and wrecks retain your selected hull, drive and turret.
+
+#### Header syntax and defaults
+
+- Put the robot name alone on line 1. Appearance directives belong in the header below it, before the first label, constant definition or executable instruction. They are not required to occupy literal lines 2, 3 and 4: comments and blank lines may intervene.
+- Directives can appear in any order. Use one literal preset word after each directive, separated by whitespace: `.shape circle`. Do not add commas or quotes, or use a register or `.def` constant in place of the preset.
+- Case does not matter: `.SHAPE HEXAGON` and `.shape hexagon` mean the same thing. Inline comments work normally, such as `.drive wheels ; four wheels`.
+- Specify each directive at most once. Repeating a setting is an assembly error even when both values are identical. Unsupported, missing or extra preset words are also errors, reported at their source line.
+- Every omitted setting receives its default independently: `tank`, `tracks`, `standard`. Existing robot files without an appearance header keep the original look. A file still needs at least one executable instruction after its name/header.
+
+For example, this changes only the drive. The hull remains `tank` and the turret remains `standard`:
+
+```asm
+Wheel Scout
+; Appearance may be separated from the name by comments.
+.drive wheels ; leave the other two settings at their defaults
+
+.def CRUISE 3
+main:
+    SPEED CRUISE
+    WAIT
+    JMP main
+```
+
+| Invalid header | Reason |
+|---|---|
+| `.shape triangle` | `triangle` is not one of the four hull presets. |
+| `.drive` | A preset is required. |
+| `.turret twin extra` | Only one preset word is accepted. |
+| `.shape circle` repeated later | Each appearance directive may appear only once. |
+| `.drive hover` after `.def CRUISE 3` or `main:` | The appearance header has already ended. Move the directive above constants and labels. |
+
+#### Saving, applying and resetting
+
+Appearance is part of the source text. Save .asm exports it, Load .asm reads it, and duplication copies it with the robot program. The browser also saves your source and draft with the roster.
+
+Typing a change edits the draft; press Apply to use it. Applying valid code before a match begins resets the arena. During an unfinished match, a robot already in the arena receives the new appearance and a fresh CPU while keeping its position and health. This is the same program-reload behavior as any other Apply, including resetting registers, memory and the stack. An invalid header prevents Apply and leaves the previously applied code and appearance active. Reset uses the last applied settings; Revert restores the last applied source in the editor.
+
+#### Built-in example combinations
+
+| Robot | Shape | Drive | Turret |
+|---|---|---|---|
+| Sentinel | `hexagon` | `tracks` | `standard` |
+| Hunter | `wedge` | `wheels` | `twin` |
+| Dodger | `circle` | `wheels` | `short` |
+| Orbiter | `tank` | `hover` | `standard` |
 
 ### Starter program
 

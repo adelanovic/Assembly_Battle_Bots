@@ -46,7 +46,7 @@ files.forEach((f, i) => {
     for (const e of res.errors) console.error(`${f}:${e.line}: ${e.message}`);
   } else {
     const team = teamSize ? (i < teamSize ? 0 : 1) : undefined;
-    entries.push({ id: i, name: res.name, program: res.program, team });
+    entries.push({ id: i, name: res.name, program: res.program, appearance: res.appearance, team });
   }
 });
 if (bad) process.exit(1);

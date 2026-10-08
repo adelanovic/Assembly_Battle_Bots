@@ -168,6 +168,7 @@
       this.world = new BB.World({
         entries: playing.map((e) => ({
           id: e.id, name: e.compiled.name, program: e.compiled.program,
+          appearance: e.compiled.appearance,
           team: this.teamSize ? TEAMS.indexOf(e.team) : undefined,
         })),
         seed,
@@ -281,6 +282,7 @@
         // Hot-swap: fresh CPU, same body.
         robot.vm = new BB.VM(e.compiled.program, this.world.makeIO(robot));
         robot.name = e.compiled.name;
+        robot.appearance = { ...e.compiled.appearance };
         robot.faultReported = false;
         e.runningSource = e.source;
         this.world.addLog(`${robot.name} reloaded its program.`);
@@ -463,6 +465,9 @@
       }
       html += '</table><h3>Sensors: <code>GET dst, NAME</code></h3><table class="ref">' +
         SENSORS.map((s) => `<tr><td><code>${s.name}</code></td><td>${esc(s.desc)}</td></tr>`).join('') + '</table>';
+      html += '<h3>Appearance header (cosmetic)</h3><table class="ref">' +
+        Object.entries(BB.ISA.APPEARANCE).map(([key, spec]) => `<tr><td><code>.${key} preset</code></td><td>${spec.choices.join(', ')}. Default: ${spec.default}.</td></tr>`).join('') +
+        '</table><p>Put these optional directives below the name, before labels, constants or instructions. Each may appear once. They change appearance only: collision size, movement, bullet origin and damage stay the same. Twin turrets still fire one shot.</p>';
       html += '<h3>Arena rules</h3><table class="ref">' + [
         ['Arena', `${C.ARENA_W} × ${C.ARENA_H}, robot radius ${C.ROBOT_RADIUS}. Layout: Classic, Open, or Random (mirrored obstacles generated from the seed). Don't hard-code obstacle positions; use FRONT and SCAN.`],
         ['Budget', `${C.CYCLES_PER_TICK} cycles per robot per tick`],
