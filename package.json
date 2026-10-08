@@ -6,8 +6,8 @@
   "scripts": {
     "test": "node tests/run-tests.js",
     "build": "node tools/build.js",
-    "match": "node tools/headless.js examples/sentinel.asm examples/hunter.asm examples/dodger.asm examples/orbiter.asm",
-    "tournament": "node tools/headless.js --rounds 50 examples/sentinel.asm examples/hunter.asm examples/dodger.asm examples/orbiter.asm"
+    "match": "node tools/headless.js examples/sentinel.asm examples/hunter.asm examples/dodger.asm examples/orbiter.asm examples/stacker.asm",
+    "tournament": "node tools/headless.js --rounds 50 examples/sentinel.asm examples/hunter.asm examples/dodger.asm examples/orbiter.asm examples/stacker.asm"
   },
   "license": "MIT"
 }

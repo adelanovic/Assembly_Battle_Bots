@@ -656,8 +656,8 @@ test('cosmetic presets leave complete seeded match outcomes and physics unchange
       const entries = BB.EXAMPLES.map((ex, id) => {
         let source = ex.source;
         if (customize) source = source
-          .replace(/^\.shape .*$/m, `.shape ${['circle', 'hexagon', 'wedge', 'tank'][id]}`)
-          .replace(/^\.drive .*$/m, `.drive ${['hover', 'wheels', 'tracks', 'wheels'][id]}`)
+          .replace(/^\.shape .*$/m, `.shape ${['circle', 'hexagon', 'wedge', 'tank'][id % 4]}`)
+          .replace(/^\.drive .*$/m, `.drive ${['hover', 'wheels', 'tracks', 'wheels'][id % 4]}`)
           .replace(/^\.turret .*$/m, '.turret twin');
         return compile(source, id);
       });
@@ -709,6 +709,61 @@ test('all appearance combinations render normal, damaged, flashing and wreck sta
     renderer.drawWreck(context, robot);
   }
   assert.ok(calls > 1000);
+});
+
+test('Stacker balances nested calls and register saves across CPU budget boundaries', () => {
+  const example = BB.EXAMPLES.find((ex) => ex.file === 'stacker.asm');
+  const compiled = BB.assemble(example.source);
+  assert.deepStrictEqual(compiled.errors, []);
+  const preserved = [123, -456, 789, 321];
+  let overallPeak = 0;
+  let overallPartialTicks = 0;
+  for (const front of [20, 500]) for (const target of [-1, 200]) {
+    let shots = 0, turns = 0, peak = 0, checks = 0, partialTicks = 0;
+    const cpu = new BB.VM(compiled.program, {
+      sense(id) {
+        return { FRONT: front, HEALTH: 100, SCAN_DIST: target, SCAN_ANGLE: 0, TURRET: 0, COOLDOWN: 0 }[BB.ISA.SENSORS[id].name] || 0;
+      },
+      random: () => 0, speed() {}, head() { turns++; }, aim() {}, scan() {},
+      fire() { shots++; },
+    });
+    cpu.regs.set(preserved);
+    const push = cpu.push.bind(cpu);
+    cpu.push = (value) => { push(value); peak = Math.max(peak, cpu.stack.length); };
+    for (let tick = 0; tick < 200; tick++) {
+      cpu.run(BB.CONFIG.CYCLES_PER_TICK);
+      assert.strictEqual(cpu.fault, null);
+      if (cpu.stack.length) partialTicks++;
+      else if (cpu.regs[6] > 0) {
+        assert.deepStrictEqual([...cpu.regs.slice(0, 4)], preserved);
+        assert.strictEqual(cpu.regs[7], 3);
+        checks++;
+      }
+    }
+    assert.ok(checks > 20, 'should complete many balanced main-loop passes');
+    overallPartialTicks += partialTicks;
+    assert.ok(peak <= 11);
+    assert.strictEqual(turns > 0, front === 20);
+    assert.strictEqual(shots > 0, target >= 0);
+    overallPeak = Math.max(overallPeak, peak);
+  }
+  assert.strictEqual(overallPeak, 11);
+  assert.ok(overallPartialTicks > 0, 'routines should span CPU ticks');
+});
+
+test('Stacker runs full practice sessions on every arena without stack growth or faults', () => {
+  const source = BB.EXAMPLES.find((ex) => ex.file === 'stacker.asm').source;
+  for (const arena of ['classic', 'random', 'open']) for (const seed of [1, 7, 42]) {
+    const world = new BB.World({ entries: [compile(source, 0)], arena, seed });
+    let peak = 0;
+    const robot = world.robots[0], push = robot.vm.push.bind(robot.vm);
+    robot.vm.push = (value) => { push(value); peak = Math.max(peak, robot.vm.stack.length); };
+    for (let tick = 0; tick < BB.CONFIG.MAX_TICKS; tick++) world.step();
+    assert.strictEqual(robot.vm.fault, null, `${arena}/${seed}`);
+    assert.ok(peak <= 11);
+    assert.ok(robot.vm.regs[6] > 20, `${arena}/${seed}: patrol/gun passes did not progress`);
+    assert.ok(robot.stats.shots === 0, 'solo robot should not shoot nonexistent targets');
+  }
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

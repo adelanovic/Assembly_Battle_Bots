@@ -9,7 +9,7 @@ Program robots in a small assembly language and watch them fight in a 2D arena.
 There is nothing to install and no build step.
 
 1. Open `index.html` in a modern browser (Chrome, Edge or Firefox). Double-clicking the file works.
-2. Four example robots are preloaded. Press **▶ Start**.
+2. Five example robots are preloaded. Press **▶ Start**.
 
 If you prefer to serve it, any static server works, for example `python -m http.server` and then http://localhost:8000.
 
@@ -114,6 +114,9 @@ There is no "dodge" instruction. Robots dodge by calling `RADAR` to find an inco
 | **Hunter** | Wedge, wheels, twin turret | Aggressive chaser. Wide scan, charges straight at the enemy, fires when lined up, never dodges. |
 | **Dodger** | Circle, wheels, short turret | Evasive skirmisher. Always moving, bounces off walls, swerves away from every projectile, independent turret. |
 | **Orbiter** | Tank, hover, standard turret | Circle-strafer. Locks on, orbits at about 200 units while firing, flips direction near walls. |
+| **Stacker** | Hexagon, wheels, twin turret | Cautious patrol with a sweeping gun. Demonstrates nested calls, explicit register saves and reverse-order restoration. |
+
+**Learning the stack:** load [examples/stacker.asm](examples/stacker.asm) and Step through its routines with the CPU inspector open. `main → combat → shoot_if_aligned → angle_error` nests three calls while saving registers with `PUSH`; each routine restores them with `POP` before `RET`. The deepest path uses 11 of the 64 stack entries. The stack is empty at the main loop's `WAIT`, and register `R6` counts completed patrol/gun passes. Helpers can span several CPU ticks without losing their saved values. `CMP` state is not saved by `PUSH`, so each branch checks a fresh comparison after a helper returns.
 
 ## Rules of the arena
 

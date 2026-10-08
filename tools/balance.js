@@ -62,7 +62,7 @@ function ffa(sources, config = {}) {
   return results;
 }
 
-const result = { seedCount: seeds, methodology: 'Seeds 1..N; four cyclic roster orders per FFA seed; team compositions swap sides; one parameter changes at a time.',
+const result = { seedCount: seeds, methodology: `Seeds 1..N; ${names.length} cyclic roster orders per FFA seed; team compositions swap sides; one parameter changes at a time.`,
   config: defaults, baseline: ffa(originalSources), robotVariants: {}, ruleVariants: {}, teams2v2: {} };
 
 const variants = [
