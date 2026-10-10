@@ -10,6 +10,8 @@
   const DEG = Math.PI / 180;
   const TAU = Math.PI * 2;
   const MAX_PARTICLES = 350;
+  const MAX_SCARS = 400;      // oldest scars fade out past this
+  const MAX_IGNITED = 30;     // fires that shots can start per match
 
   // Robot body geometry (robot-local units, +x = heading). The collision
   // circle has radius C.ROBOT_RADIUS (16); the hull fits just inside it.
@@ -24,6 +26,9 @@
       this.particles = [];
       this.robotFx = new Map();   // robot id -> { flash, muzzle } frame counters
       this.floor = null;          // offscreen canvas: floor + obstacles
+      this.decals = null;         // offscreen canvas: battle scars, rebuilt from `scars`
+      this.scars = [];            // { kind: 'crater' | 'char', x, y, r, seed }
+      this.ignited = [];          // fires started by shots this match
       this.world = null;
       this.resize();
     }
@@ -43,12 +48,16 @@
       this.scale = (cssWidth / C.ARENA_W) * dpr;
       this.ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
       this.floor = null;
+      this.decals = null;
     }
 
     /** Forget all cosmetic state (called when a new match starts). */
     clearEffects() {
       this.particles = [];
       this.robotFx.clear();
+      this.scars = [];
+      this.ignited = [];
+      this.decals = null;
     }
 
     fx(id) {
@@ -68,6 +77,7 @@
             break;
           case 'spark':
             this.burst(e.x, e.y, 3, ['#ffd27f', '#c9d0dc'], 1, 2.5, 6, 1.3);
+            this.shotHitTerrain(e.x, e.y);
             break;
           case 'bump':
             this.burst(e.x, e.y, 4, ['#ffcc80', '#ffffff'], 1, 2, 7, 1.5);
@@ -77,6 +87,7 @@
             this.particles.push({ kind: 'ring', x: e.x, y: e.y, size: 70, life: 22, max: 22, color: '#ffffff' });
             this.burst(e.x, e.y, 22, ['#ffb347', '#ff6a3d', '#fff1c1', e.color], 1.5, 5.5, 28, 2.6);
             for (let i = 0; i < 8; i++) this.smoke(e.x, e.y, 1.6);
+            this.addScar({ kind: 'crater', x: e.x, y: e.y, r: 15 + Math.random() * 5 });
             break;
         }
       }
@@ -92,6 +103,34 @@
           color: colors[i % colors.length], size: size * (0.6 + Math.random() * 0.6),
         });
       }
+    }
+
+    /** A shot stopped at x, y. If it hit a stand of trees, char it and maybe set it alight. */
+    shotHitTerrain(x, y) {
+      const world = this.world;
+      if (!world || !world.obstacles.some((o) => BB.geo.pointInRect(x, y, { x: o.x - 1, y: o.y - 1, w: o.w + 2, h: o.h + 2 }))) return;
+      this.addScar({ kind: 'char', x, y, r: 4 + Math.random() * 3 });
+      const burning = (this.fires || []).concat(this.ignited);
+      if (Math.random() < 0.12 && this.ignited.length < MAX_IGNITED && !burning.some((f) => Math.hypot(f.x - x, f.y - y) < 14)) {
+        this.ignited.push({ x, y, r: 8 + Math.random() * 5, phase: Math.random() * TAU, born: performance.now() });
+      }
+    }
+
+    addScar(scar) {
+      scar.seed = Math.floor(Math.random() * 4294967296);
+      this.scars.push(scar);
+      if (this.scars.length > MAX_SCARS) { this.scars.shift(); this.decals = null; }
+      else if (this.decals) drawScar(this.decals.getContext('2d'), scar);
+    }
+
+    renderDecals() {
+      const c = document.createElement('canvas');
+      c.width = this.canvas.width;
+      c.height = this.canvas.height;
+      const g = c.getContext('2d');
+      g.setTransform(this.scale, 0, 0, this.scale, 0, 0);
+      for (const scar of this.scars) drawScar(g, scar);
+      return c;
     }
 
     smoke(x, y, spread = 0.4) {
@@ -110,8 +149,11 @@
       if (!this.floor) this.floor = this.renderFloor(world);
       ctx.drawImage(this.floor, 0, 0, C.ARENA_W, C.ARENA_H);
       if (!world) return;
+      if (!this.decals) this.decals = this.renderDecals();
+      ctx.drawImage(this.decals, 0, 0, C.ARENA_W, C.ARENA_H);
 
       const now = performance.now();
+      this.drawFires(ctx, now);
       for (const r of world.robots) if (!r.alive) this.drawWreck(ctx, r);
       if (this.showScans) for (const r of world.robots) if (r.alive) this.drawScan(ctx, r, world.tick);
       for (const p of world.projectiles) this.drawProjectile(ctx, p);
@@ -139,21 +181,27 @@
       // vignette: darker toward the edges so the centre reads as the stage
       const v = g.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, W * 0.62);
       v.addColorStop(0, 'rgba(0,0,0,0)');
-      v.addColorStop(1, 'rgba(0,0,0,0.38)');
+      v.addColorStop(1, 'rgba(0,0,0,0.46)');
       g.fillStyle = v;
+      g.fillRect(0, 0, W, H);
+      const haze = g.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.7);
+      haze.addColorStop(0, 'rgba(0,0,0,0)');
+      haze.addColorStop(1, 'rgba(90,30,10,0.07)');
+      g.fillStyle = haze;
       g.fillRect(0, 0, W, H);
 
       if (world) for (const m of world.mud) drawMud(g, m);
-      if (world) for (const o of world.obstacles) drawObstacle(g, o);
+      this.fires = [];
+      if (world) for (const o of world.obstacles) drawObstacle(g, o, this.fires);
 
-      // border: steel rim with a soft inner glow
-      g.strokeStyle = 'rgba(110,150,210,0.14)';
+      // border: weathered steel rim with a dull inner glow
+      g.strokeStyle = 'rgba(170,150,120,0.07)';
       g.lineWidth = 10;
       g.strokeRect(7, 7, W - 14, H - 14);
-      g.strokeStyle = '#59677c';
+      g.strokeStyle = '#4c4f50';
       g.lineWidth = 4;
       g.strokeRect(2, 2, W - 4, H - 4);
-      g.strokeStyle = '#8796ad';
+      g.strokeStyle = '#7a7568';
       g.lineWidth = 1;
       g.strokeRect(4.5, 4.5, W - 9, H - 9);
       return c;
@@ -404,6 +452,56 @@
       ctx.fillText(r.name, r.x, r.y - C.ROBOT_RADIUS - 8);
     }
 
+    /** Flickering flames on burning trees, with rising sparks and smoke. */
+    drawFires(ctx, now) {
+      const fires = (this.fires || []).concat(this.ignited);
+      if (!fires.length) return;
+      const t = now / 1000;
+      const tongue = (x, y, s) => {
+        ctx.beginPath();
+        ctx.moveTo(x, y - s * 1.7);
+        ctx.quadraticCurveTo(x + s, y - s * 0.2, x, y + s * 0.6);
+        ctx.quadraticCurveTo(x - s, y - s * 0.2, x, y - s * 1.7);
+        ctx.fill();
+      };
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const f of fires) {
+        const grow = f.born ? Math.min(1, (now - f.born) / 1500) : 1;
+        const flick = (0.8 + 0.2 * Math.sin(t * 9 + f.phase) * Math.sin(t * 13.7 + f.phase * 2)) * grow;
+        const reach = Math.max(14, f.r) * 2 * flick;
+        const glow = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, reach);
+        glow.addColorStop(0, 'rgba(255,120,30,0.3)');
+        glow.addColorStop(1, 'rgba(255,60,10,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(f.x, f.y, reach, 0, TAU); ctx.fill();
+        for (let k = 0; k < 5; k++) {
+          const a = f.phase + k * TAU / 5 + t * 0.3;
+          const d = f.r * (0.2 + 0.18 * Math.sin(k * 2.3 + f.phase));
+          const x = f.x + Math.cos(a) * d, y = f.y + Math.sin(a) * d;
+          const s = Math.max(4, f.r * 0.42) * (0.7 + 0.3 * Math.sin(t * 11 + k * 1.7 + f.phase)) * flick;
+          ctx.fillStyle = 'rgba(255,80,20,0.55)';
+          tongue(x, y, s);
+          ctx.fillStyle = 'rgba(255,180,60,0.6)';
+          tongue(x, y + s * 0.15, s * 0.6);
+          ctx.fillStyle = 'rgba(255,240,190,0.7)';
+          tongue(x, y + s * 0.25, s * 0.28);
+        }
+      }
+      ctx.restore();
+      if (this.particles.length >= MAX_PARTICLES) return;
+      for (const f of fires) {
+        if (Math.random() < 0.05) this.smoke(f.x, f.y - f.r * 0.4, 0.3);
+        if (Math.random() < 0.06) {
+          this.particles.push({
+            kind: 'ember', x: f.x + (Math.random() - 0.5) * f.r, y: f.y - f.r * 0.3,
+            vx: (Math.random() - 0.5) * 0.3, vy: -0.4 - Math.random() * 0.4,
+            life: 45, max: 45, color: Math.random() < 0.5 ? '#ffb347' : '#ff7a2f', size: 1.1,
+          });
+        }
+      }
+    }
+
     emitAmbientSmoke(world) {
       for (const r of world.robots) {
         if (r.alive && r.health / C.MAX_HEALTH < 0.25 && Math.random() < 0.35) this.smoke(r.x, r.y);
@@ -437,6 +535,12 @@
             ctx.globalAlpha = 1 - t;
             ctx.fillStyle = p.color;
             ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (1 - t * 0.5), 0, TAU); ctx.fill();
+            break;
+          case 'ember':
+            p.x += p.vx + Math.sin(p.life * 0.4) * 0.15; p.y += p.vy; p.vy *= 0.985;
+            ctx.globalAlpha = 1 - t;
+            ctx.fillStyle = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (1 - t * 0.6), 0, TAU); ctx.fill();
             break;
           case 'smoke':
             p.x += p.vx; p.y += p.vy;
@@ -497,75 +601,140 @@
   }
 
   /**
-   * Cosmetic grass covering the open ground. Everything here is flat and low
-   * contrast so it never reads as an obstacle or mud; decorations skip the
-   * terrain rects. Varies with the seed, fixed for a given world.
+   * War-torn countryside covering the open ground: muted grass scarred by
+   * burns, craters and scrap. Everything here is flat and low contrast so it
+   * never reads as an obstacle or mud; details skip the terrain rects.
+   * Varies with the seed, fixed for a given world.
    */
   function drawGround(g, world, W, H) {
     const seed = world ? world.seed : 1;
     const rnd = rectRng({ x: seed, y: 7, w: 13, h: 29 });
     const blocked = world ? world.obstacles.concat(world.mud) : [];
     const clear = (x, y, pad) => blocked.every((o) => x < o.x - pad || x > o.x + o.w + pad || y < o.y - pad || y > o.y + o.h + pad);
-
-    g.fillStyle = '#16231a';
-    g.fillRect(0, 0, W, H);
-    // Mowing stripes, 50 units wide, aligned with the old grid.
-    for (let x = 0; x < W; x += 100) { g.fillStyle = 'rgba(255,255,255,0.018)'; g.fillRect(x, 0, 50, H); }
-    // Large soft blotches of lighter and darker grass.
-    for (let i = 0; i < 26; i++) {
-      const x = rnd() * W, y = rnd() * H, r = 40 + rnd() * 90;
+    const glow = (x, y, r, color) => {
       const grad = g.createRadialGradient(x, y, 0, x, y, r);
-      grad.addColorStop(0, rnd() < 0.5 ? 'rgba(70,110,60,0.10)' : 'rgba(5,15,8,0.16)');
+      grad.addColorStop(0, color);
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       g.fillStyle = grad;
       g.fillRect(x - r, y - r, 2 * r, 2 * r);
+    };
+
+    g.fillStyle = '#18201a';
+    g.fillRect(0, 0, W, H);
+    // Patches of lighter grass, darker grass and pale ash.
+    for (let i = 0; i < 28; i++) {
+      const roll = rnd();
+      glow(rnd() * W, rnd() * H, 40 + rnd() * 90,
+        roll < 0.4 ? 'rgba(70,100,55,0.1)' : roll < 0.75 ? 'rgba(5,12,6,0.18)' : 'rgba(120,110,100,0.06)');
     }
     // Faint grid, so positions are still easy to judge.
     g.lineWidth = 1;
-    for (const [step, color] of [[50, 'rgba(160,200,150,0.035)'], [100, 'rgba(160,200,150,0.06)']]) {
+    for (const [step, color] of [[50, 'rgba(190,190,160,0.03)'], [100, 'rgba(190,190,160,0.05)']]) {
       g.strokeStyle = color;
       g.beginPath();
       for (let x = step; x < W; x += step) { g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, H); }
       for (let y = step; y < H; y += step) { g.moveTo(0, y + 0.5); g.lineTo(W, y + 0.5); }
       g.stroke();
     }
-    // Grass tufts: small fans of blades.
+    // Burnt patches: scorched earth where the grass is gone.
+    const burns = [];
+    for (let i = 0; i < 7; i++) {
+      const x = rnd() * W, y = rnd() * H, r = 25 + rnd() * 35;
+      if (!clear(x, y, 10)) continue;
+      burns.push({ x, y, r });
+      glow(x, y, r, 'rgba(20,14,10,0.5)');
+      glow(x, y, r * 0.55, 'rgba(10,8,6,0.35)');
+    }
+    const burnt = (x, y) => burns.some((b) => Math.hypot(b.x - x, b.y - y) < b.r * 0.7);
+    // Cracks radiating through the burnt patches.
     g.lineCap = 'round';
-    for (let i = 0; i < 520; i++) {
+    const crack = (x, y, a, steps, width) => {
+      for (let k = 0; k < steps; k++) {
+        const len = 4 + rnd() * 8;
+        const nx = x + Math.cos(a) * len, ny = y + Math.sin(a) * len;
+        if (!clear(nx, ny, 2)) return;
+        g.strokeStyle = 'rgba(0,0,0,0.45)';
+        g.lineWidth = width;
+        g.beginPath(); g.moveTo(x, y); g.lineTo(nx, ny); g.stroke();
+        if (rnd() < 0.25 && width > 0.7) crack(nx, ny, a + (rnd() < 0.5 ? -1 : 1) * (0.5 + rnd() * 0.6), steps - k - 1, width * 0.7);
+        x = nx; y = ny; a += (rnd() - 0.5) * 0.9;
+      }
+    };
+    for (const b of burns) {
+      for (let k = 0, n = 2 + Math.floor(rnd() * 3); k < n; k++) crack(b.x, b.y, rnd() * Math.PI * 2, 2 + Math.floor(rnd() * 4), 1.1 + rnd() * 0.5);
+    }
+    // A few shallow craters, kept flat and dim.
+    for (let i = 0; i < 5; i++) {
+      const r = 9 + rnd() * 12, x = rnd() * W, y = rnd() * H;
+      if (!clear(x, y, r + 6)) continue;
+      glow(x, y, r * 1.4, 'rgba(0,0,0,0.14)');
+      g.fillStyle = 'rgba(20,14,10,0.2)';
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+      g.lineWidth = 2;
+      g.strokeStyle = 'rgba(150,140,110,0.1)';
+      g.beginPath(); g.arc(x, y, r, Math.PI * 0.75, Math.PI * 1.75); g.stroke();
+      g.strokeStyle = 'rgba(0,0,0,0.2)';
+      g.beginPath(); g.arc(x, y, r, Math.PI * 1.75, Math.PI * 2.75); g.stroke();
+    }
+    // Grass tufts: green on living ground, dry and brown on burnt ground.
+    for (let i = 0; i < 460; i++) {
       const x = rnd() * W, y = rnd() * H;
       if (!clear(x, y, 4)) continue;
-      g.strokeStyle = rnd() < 0.6 ? 'rgba(90,140,70,0.32)' : 'rgba(40,70,35,0.45)';
+      const dry = burnt(x, y) || rnd() < 0.25;
+      g.strokeStyle = dry ? (rnd() < 0.6 ? 'rgba(120,105,80,0.22)' : 'rgba(60,50,40,0.35)')
+        : (rnd() < 0.6 ? 'rgba(85,125,65,0.3)' : 'rgba(40,65,35,0.42)');
       g.lineWidth = 1;
       g.beginPath();
       for (let k = 0, n = 3 + Math.floor(rnd() * 3); k < n; k++) {
-        const a = -Math.PI / 2 + (rnd() - 0.5) * 1.3, len = 3 + rnd() * 4;
+        const a = -Math.PI / 2 + (rnd() - 0.5) * (dry ? 1.8 : 1.3), len = 2.5 + rnd() * 4;
         g.moveTo(x, y);
         g.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
       }
       g.stroke();
     }
     g.lineCap = 'butt';
-    // Pebbles: tiny, flat and dim.
-    for (let i = 0; i < 70; i++) {
+    // Scrap: small rotated shards of steel and rust.
+    for (let i = 0; i < 26; i++) {
+      const x = rnd() * W, y = rnd() * H;
+      if (!clear(x, y, 4)) continue;
+      g.save();
+      g.translate(x, y);
+      g.rotate(rnd() * Math.PI);
+      g.fillStyle = rnd() < 0.6 ? 'rgba(115,120,125,0.3)' : 'rgba(125,65,35,0.35)';
+      const w = 1.5 + rnd() * 4, h = 1 + rnd() * 2;
+      if (rnd() < 0.5) g.fillRect(-w / 2, -h / 2, w, h);
+      else { g.beginPath(); g.moveTo(-w / 2, h / 2); g.lineTo(w / 2, h / 2); g.lineTo(0, -h); g.closePath(); g.fill(); }
+      g.restore();
+    }
+    // Pebbles and ash.
+    for (let i = 0; i < 60; i++) {
       const x = rnd() * W, y = rnd() * H;
       if (!clear(x, y, 3)) continue;
-      g.fillStyle = 'rgba(150,155,145,0.16)';
+      g.fillStyle = 'rgba(150,150,140,0.14)';
       g.beginPath();
-      g.ellipse(x, y, 1 + rnd() * 1.8, 0.8 + rnd() * 1.2, rnd() * Math.PI, 0, Math.PI * 2);
+      g.ellipse(x, y, 1 + rnd() * 1.6, 0.8 + rnd() * 1.1, rnd() * Math.PI, 0, Math.PI * 2);
       g.fill();
     }
-    // A few small flower clusters.
-    const petals = ['rgba(235,225,150,0.55)', 'rgba(230,230,240,0.5)', 'rgba(190,160,230,0.5)'];
-    for (let i = 0; i < 14; i++) {
+    // A few hardy flowers, away from the burns.
+    const petals = ['rgba(225,215,140,0.45)', 'rgba(220,220,230,0.4)', 'rgba(180,150,215,0.4)'];
+    for (let i = 0; i < 8; i++) {
       const cx = rnd() * W, cy = rnd() * H, color = petals[Math.floor(rnd() * petals.length)];
-      for (let k = 0, n = 3 + Math.floor(rnd() * 4); k < n; k++) {
-        const x = cx + (rnd() - 0.5) * 18, y = cy + (rnd() - 0.5) * 14;
-        if (!clear(x, y, 3)) continue;
+      for (let k = 0, n = 2 + Math.floor(rnd() * 4); k < n; k++) {
+        const x = cx + (rnd() - 0.5) * 16, y = cy + (rnd() - 0.5) * 12;
+        if (!clear(x, y, 3) || burnt(x, y)) continue;
         g.fillStyle = color;
         g.beginPath();
-        g.arc(x, y, 0.9 + rnd() * 0.7, 0, Math.PI * 2);
+        g.arc(x, y, 0.9 + rnd() * 0.6, 0, Math.PI * 2);
         g.fill();
       }
+    }
+    // Embers still glowing in some of the burns.
+    for (const b of burns) {
+      if (rnd() < 0.4) continue;
+      const x = b.x + (rnd() - 0.5) * b.r * 0.6, y = b.y + (rnd() - 0.5) * b.r * 0.6;
+      glow(x, y, 4 + rnd() * 4, 'rgba(255,110,30,0.3)');
+      g.fillStyle = 'rgba(255,170,80,0.65)';
+      g.beginPath(); g.arc(x, y, 0.8, 0, Math.PI * 2); g.fill();
     }
   }
 
@@ -592,6 +761,67 @@
     for (let i = 0; i < n; i++) p.quadraticCurveTo(pts[i][0], pts[i][1], ...mid(i));
     p.closePath();
     return p;
+  }
+
+  /** A battle scar on the decal layer: a blast crater or a small char mark. */
+  function drawScar(g, s) {
+    const rnd = BB.geo.makeRng(s.seed);
+    const glow = (r, color) => {
+      const grad = g.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
+      grad.addColorStop(0, color);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad;
+      g.beginPath(); g.arc(s.x, s.y, r, 0, Math.PI * 2); g.fill();
+    };
+    if (s.kind === 'char') {
+      glow(s.r * 1.6, 'rgba(8,6,4,0.55)');
+      g.fillStyle = 'rgba(0,0,0,0.5)';
+      for (let i = 0; i < 5; i++) {
+        g.beginPath();
+        g.arc(s.x + (rnd() - 0.5) * s.r * 1.6, s.y + (rnd() - 0.5) * s.r * 1.6, 0.6 + rnd() * 1.2, 0, Math.PI * 2);
+        g.fill();
+      }
+      return;
+    }
+    // Scorched blast area with streaks thrown outward.
+    glow(s.r * 2.6, 'rgba(10,7,5,0.5)');
+    g.lineCap = 'round';
+    for (let i = 0, n = 9 + Math.floor(rnd() * 5); i < n; i++) {
+      const a = rnd() * Math.PI * 2, from = s.r * 0.8, to = s.r * (1.6 + rnd() * 1.1);
+      g.strokeStyle = 'rgba(5,4,3,' + (0.25 + rnd() * 0.25).toFixed(2) + ')';
+      g.lineWidth = 1 + rnd() * 2.5;
+      g.beginPath();
+      g.moveTo(s.x + Math.cos(a) * from, s.y + Math.sin(a) * from);
+      g.lineTo(s.x + Math.cos(a) * to, s.y + Math.sin(a) * to);
+      g.stroke();
+    }
+    g.lineCap = 'butt';
+    // The crater bowl: ragged edge, dark floor, lit rim on the top left.
+    const bowl = blobPath(rnd, s.x, s.y, s.r, s.r * 0.9, s.r * 0.15);
+    g.fillStyle = 'rgba(12,9,7,0.75)';
+    g.fill(bowl);
+    g.save();
+    g.clip(bowl);
+    glow(s.r * 0.7, 'rgba(0,0,0,0.5)');
+    g.restore();
+    g.lineWidth = 2;
+    g.strokeStyle = 'rgba(150,130,105,0.22)';
+    g.save();
+    g.beginPath(); g.rect(s.x - s.r * 2, s.y - s.r * 2, s.r * 2, s.r * 2); g.clip();
+    g.stroke(bowl);
+    g.restore();
+    // Debris and a few embers left in the crater.
+    for (let i = 0; i < 10; i++) {
+      const a = rnd() * Math.PI * 2, d = s.r * (0.9 + rnd() * 1.4);
+      g.fillStyle = rnd() < 0.6 ? 'rgba(110,112,115,0.4)' : 'rgba(40,32,26,0.7)';
+      g.fillRect(s.x + Math.cos(a) * d, s.y + Math.sin(a) * d, 1 + rnd() * 2.5, 1 + rnd() * 1.5);
+    }
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle = 'rgba(255,130,50,0.6)';
+      g.beginPath();
+      g.arc(s.x + (rnd() - 0.5) * s.r, s.y + (rnd() - 0.5) * s.r, 0.8, 0, Math.PI * 2);
+      g.fill();
+    }
   }
 
   /** Mud: a wobbly patch whose edge stays within a few units of the slowing rect. */
@@ -647,76 +877,188 @@
   }
 
   const CANOPY = [
-    ['#1f4a2a', '#2f6b38', '#4c8f45'],   // pine green
-    ['#24502c', '#3a7a3c', '#5c9e4c'],   // leafy green
-    ['#2a4a26', '#456d2f', '#6b8f3c'],   // olive
+    ['#1f4228', '#2d5f35', '#46803f'],   // pine green
+    ['#24462a', '#386b39', '#558d47'],   // leafy green
+    ['#2a4226', '#43622e', '#647f3a'],   // olive
   ];
 
-  /**
-   * Obstacles are drawn as a stand of trees seen from above. The dark
-   * undergrowth fills the exact collision rect, so every solid pixel reads
-   * as blocked; canopies overhang it by only a couple of units.
-   */
-  function drawObstacle(g, o) {
-    const rnd = rectRng(o);
-    // Ground shadow cast down-right, then undergrowth on the collision footprint.
-    g.fillStyle = 'rgba(0,0,0,0.38)';
-    roundRect(g, o.x + 4, o.y + 6, o.w, o.h, 8);
+  /** A living tree seen from above: a lobed canopy, lit from the top left. */
+  function drawLivingTree(g, t) {
+    g.fillStyle = 'rgba(0,0,0,0.35)';
+    g.beginPath();
+    g.arc(t.x + t.r * 0.18, t.y + t.r * 0.25, t.r, 0, Math.PI * 2);
     g.fill();
-    g.fillStyle = '#0a110c';
-    roundRect(g, o.x, o.y, o.w, o.h, 6);
+    const [dark, mid, light] = t.palette;
+    const puffs = (scale, offX, offY, color) => {
+      g.fillStyle = color;
+      g.beginPath();
+      g.arc(t.x + offX, t.y + offY, t.r * 0.62 * scale, 0, Math.PI * 2);
+      for (let k = 0; k < t.lobes; k++) {
+        const a = t.spin + k * Math.PI * 2 / t.lobes;
+        const px = t.x + offX + Math.cos(a) * t.r * 0.5 * scale, py = t.y + offY + Math.sin(a) * t.r * 0.5 * scale;
+        g.moveTo(px + t.r * 0.45 * scale, py);
+        g.arc(px, py, t.r * 0.45 * scale, 0, Math.PI * 2);
+      }
+      g.fill();
+    };
+    puffs(1, 0, 0, dark);
+    puffs(0.8, -t.r * 0.08, -t.r * 0.1, mid);
+    if (t.shrub) return; // low bushes: no bright crown or glint
+    puffs(0.45, -t.r * 0.22, -t.r * 0.26, light);
+    g.fillStyle = 'rgba(255,255,220,0.08)';
+    g.beginPath();
+    g.arc(t.x - t.r * 0.3, t.y - t.r * 0.35, t.r * 0.18, 0, Math.PI * 2);
     g.fill();
+  }
 
-    // Pack canopies on a jittered grid that covers the rect.
-    const base = Math.max(11, Math.min(22, Math.min(o.w, o.h) / 2 + 2));
-    const nx = Math.max(1, Math.round(o.w / (base * 1.45)));
-    const ny = Math.max(1, Math.round(o.h / (base * 1.45)));
+  /** A charred, leafless tree seen from above: bare branches around a burnt trunk. */
+  function drawDeadTree(g, t) {
+    if (t.shrub) {
+      // Burnt stump.
+      g.fillStyle = 'rgba(0,0,0,0.35)';
+      g.beginPath(); g.arc(t.x + 1.5, t.y + 2, t.r * 0.7, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#211b17';
+      g.beginPath(); g.arc(t.x, t.y, t.r * 0.6, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#3d332b';
+      g.lineWidth = 1;
+      g.beginPath(); g.arc(t.x, t.y, t.r * 0.6, 0, Math.PI * 2); g.stroke();
+      return;
+    }
+    const branch = (rnd, x, y, a, len, width, depth, dx, dy) => {
+      const bend = (rnd() - 0.5) * 0.5;
+      const mx = x + Math.cos(a + bend) * len * 0.5, my = y + Math.sin(a + bend) * len * 0.5;
+      const ex = x + Math.cos(a) * len, ey = y + Math.sin(a) * len;
+      g.lineWidth = width;
+      g.beginPath(); g.moveTo(x + dx, y + dy); g.quadraticCurveTo(mx + dx, my + dy, ex + dx, ey + dy); g.stroke();
+      if (depth > 0) {
+        for (const side of [-1, 1]) branch(rnd, ex, ey, a + side * (0.35 + rnd() * 0.45), len * (0.5 + rnd() * 0.2), width * 0.62, depth - 1, dx, dy);
+      }
+    };
+    const width = Math.max(1.8, t.r * 0.2);
+    g.lineCap = 'round';
+    // Replay the same branch shapes three times: shadow, wood, then a thin lit edge.
+    for (const [color, dx, dy, wmul] of [['rgba(0,0,0,0.45)', 2, 3, 1], ['#2b241f', 0, 0, 1], ['rgba(110,95,80,0.35)', -0.5, -0.5, 0.35]]) {
+      const rnd = BB.geo.makeRng(t.shape);
+      g.strokeStyle = color;
+      const n = 5 + Math.floor(rnd() * 3);
+      for (let k = 0; k < n; k++) {
+        const a = t.spin + k * Math.PI * 2 / n + (rnd() - 0.5) * 0.5;
+        branch(rnd, t.x, t.y, a, t.r * (0.42 + rnd() * 0.14), width * wmul, 2, dx, dy);
+      }
+    }
+    g.lineCap = 'butt';
+    // Trunk: a charred cross-section, sometimes still smouldering.
+    g.fillStyle = '#1a1512';
+    g.beginPath(); g.arc(t.x, t.y, t.r * 0.2, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#3a302a';
+    g.lineWidth = 1;
+    g.beginPath(); g.arc(t.x, t.y, t.r * 0.2, 0, Math.PI * 2); g.stroke();
+    if (t.smoulder) {
+      const gl = g.createRadialGradient(t.x, t.y, 0, t.x, t.y, t.r * 0.45);
+      gl.addColorStop(0, 'rgba(255,110,30,0.45)');
+      gl.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gl;
+      g.beginPath(); g.arc(t.x, t.y, t.r * 0.45, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(255,170,80,0.8)';
+      g.beginPath(); g.arc(t.x, t.y, 1, 0, Math.PI * 2); g.fill();
+    }
+  }
+
+  /**
+   * Obstacles are drawn as stands of trees seen from above, some living and
+   * some burnt; each stand has its own share of damage. Undergrowth covers
+   * the collision rect so the blocked area always reads, and canopies
+   * overhang it by only a few units.
+   */
+  function drawObstacle(g, o, fires) {
+    const rnd = rectRng(o);
+    const thin = Math.min(o.w, o.h);
+    const isBar = thin <= 30 && Math.max(o.w, o.h) >= 2 * thin;
+    const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+    const damage = 0.1 + rnd() * 0.55; // share of trees burnt in this stand
+    const tree = (x, y, r, shrub = false) => {
+      const dead = rnd() < damage;
+      return { x, y, r, shrub, dead, smoulder: dead && !shrub && rnd() < 0.25,
+        palette: CANOPY[Math.floor(rnd() * CANOPY.length)], lobes: (shrub ? 4 : 5) + Math.floor(rnd() * (shrub ? 2 : 3)),
+        spin: rnd() * Math.PI * 2, shape: Math.floor(rnd() * 4294967296) };
+    };
     const trees = [];
-    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
-      const r = base * (0.82 + rnd() * 0.3);
+
+    // Soft ground shadow, then undergrowth with a ragged edge that still
+    // covers the collision rect, scattered with burnt rubble.
+    const footprint = blobPath(rnd, cx, cy, o.w / 2 + 3, o.h / 2 + 3, 2.5, 0.3);
+    g.save();
+    g.translate(4, 6);
+    g.fillStyle = 'rgba(0,0,0,0.32)';
+    g.fill(footprint);
+    g.restore();
+    g.fillStyle = '#10180f';
+    g.fill(footprint);
+    g.save();
+    g.clip(footprint);
+    for (let i = 0, n = Math.round(o.w * o.h * damage / 30); i < n; i++) {
+      const roll = rnd();
+      g.fillStyle = roll < 0.6 ? 'rgba(55,48,42,0.55)' : roll < 0.96 ? 'rgba(130,120,110,0.12)' : 'rgba(255,120,40,0.5)';
+      g.beginPath();
+      g.arc(o.x + rnd() * o.w, o.y + rnd() * o.h, roll < 0.96 ? 0.8 + rnd() * 1.6 : 0.8, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.restore();
+
+    if (isBar) {
+      // A natural row: mixed sizes, uneven spacing, drifting side to side.
+      const horiz = o.w >= o.h, len = horiz ? o.w : o.h;
+      const slack = 5; // max overhang across the row
+      const along = (t, side, r) => {
+        const mid = thin / 2, drift = Math.max(0, mid + slack - r);
+        const off = mid + (side * 2 - 1) * drift;
+        return horiz ? tree(o.x + t, o.y + off, r) : tree(o.x + off, o.y + t, r);
+      };
+      let t = 0, edge = 0; // edge: far side of the last canopy
+      for (;;) {
+        const r = Math.min(thin / 2 + slack, (thin / 2 + 2) * (0.65 + rnd() * 0.6));
+        const pos = Math.max(r - 2, t + r * (0.6 + rnd() * 0.5));
+        if (pos > len - r + 2) {
+          // Close the row with one tree flush to the end, unless it's already covered.
+          if (len - edge > r * 0.5) trees.push(along(len - r + 2, rnd(), r));
+          break;
+        }
+        trees.push(along(pos, rnd(), r));
+        edge = pos + r;
+        t = pos + r * (0.35 + rnd() * 0.5);
+      }
+    } else {
+      // Groves: a dense jittered grid so there are no bare gaps...
+      const base = Math.max(11, Math.min(22, thin / 2 + 2));
+      const nx = Math.max(1, Math.round(o.w / (base * 1.45)));
+      const ny = Math.max(1, Math.round(o.h / (base * 1.45)));
       const slack = 2; // max overhang beyond the collision rect
-      const cx = o.x + (i + 0.5) * o.w / nx + (rnd() - 0.5) * base * 0.5;
-      const cy = o.y + (j + 0.5) * o.h / ny + (rnd() - 0.5) * base * 0.5;
-      trees.push({
-        x: Math.max(o.x + r - slack, Math.min(o.x + o.w - r + slack, cx)),
-        y: Math.max(o.y + r - slack, Math.min(o.y + o.h - r + slack, cy)),
-        r: Math.min(r, o.w / 2 + slack, o.h / 2 + slack),
-        palette: CANOPY[Math.floor(rnd() * CANOPY.length)],
-        lobes: 5 + Math.floor(rnd() * 3),
-        spin: rnd() * Math.PI * 2,
-      });
+      for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+        const r = Math.min(base * (0.75 + rnd() * 0.45), o.w / 2 + slack, o.h / 2 + slack);
+        const x = o.x + (i + 0.5) * o.w / nx + (rnd() - 0.5) * base * 0.6;
+        const y = o.y + (j + 0.5) * o.h / ny + (rnd() - 0.5) * base * 0.6;
+        trees.push(tree(Math.max(o.x + r - slack, Math.min(o.x + o.w - r + slack, x)),
+          Math.max(o.y + r - slack, Math.min(o.y + o.h - r + slack, y)), r));
+      }
+      // ...then smaller trees scattered into whatever space is left.
+      for (let i = 0, n = 10 + Math.round(o.w * o.h / 150); i < n; i++) {
+        const r = base * (0.45 + rnd() * 0.3);
+        const x = o.x + r - slack + rnd() * (o.w - 2 * (r - slack)), y = o.y + r - slack + rnd() * (o.h - 2 * (r - slack));
+        if (trees.some((q) => Math.hypot(q.x - x, q.y - y) < 0.7 * (q.r + r))) continue;
+        trees.push(tree(x, y, r));
+      }
+    }
+    // A few low shrubs or stumps tucked into gaps.
+    for (let i = 0, n = 2 + Math.round((o.w + o.h) / 30); i < n; i++) {
+      const r = 4.5 + rnd() * 3;
+      const x = o.x + rnd() * o.w, y = o.y + rnd() * o.h;
+      if (trees.some((q) => Math.hypot(q.x - x, q.y - y) < (q.shrub ? q.r + r : q.r * 0.8))) continue;
+      trees.push(tree(x, y, r, true));
     }
     trees.sort((a, b) => a.y - b.y); // lower trees overlap the ones behind them
-
-    for (const t of trees) {
-      // Soft shadow on the undergrowth.
-      g.fillStyle = 'rgba(0,0,0,0.35)';
-      g.beginPath();
-      g.arc(t.x + t.r * 0.18, t.y + t.r * 0.25, t.r, 0, Math.PI * 2);
-      g.fill();
-      // Lobed canopy: a ring of overlapping puffs around a core.
-      const [dark, mid, light] = t.palette;
-      const puffs = (scale, offX, offY, color) => {
-        g.fillStyle = color;
-        g.beginPath();
-        g.arc(t.x + offX, t.y + offY, t.r * 0.62 * scale, 0, Math.PI * 2);
-        for (let k = 0; k < t.lobes; k++) {
-          const a = t.spin + k * Math.PI * 2 / t.lobes;
-          const px = t.x + offX + Math.cos(a) * t.r * 0.5 * scale, py = t.y + offY + Math.sin(a) * t.r * 0.5 * scale;
-          g.moveTo(px + t.r * 0.45 * scale, py);
-          g.arc(px, py, t.r * 0.45 * scale, 0, Math.PI * 2);
-        }
-        g.fill();
-      };
-      puffs(1, 0, 0, dark);
-      puffs(0.8, -t.r * 0.08, -t.r * 0.1, mid);
-      puffs(0.45, -t.r * 0.22, -t.r * 0.26, light);
-      // Highlight glint.
-      g.fillStyle = 'rgba(255,255,220,0.10)';
-      g.beginPath();
-      g.arc(t.x - t.r * 0.3, t.y - t.r * 0.35, t.r * 0.18, 0, Math.PI * 2);
-      g.fill();
-    }
+    for (const t of trees) (t.dead ? drawDeadTree : drawLivingTree)(g, t);
+    // Some dead trees are still burning; their flames are animated each frame.
+    for (const t of trees) if (t.dead && !t.shrub && rnd() < 0.4) fires.push({ x: t.x, y: t.y, r: t.r, phase: rnd() * Math.PI * 2 });
   }
 
   function roundRect(ctx, x, y, w, h, r) {
