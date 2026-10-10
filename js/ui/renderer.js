@@ -12,6 +12,9 @@
   const MAX_PARTICLES = 350;
   const MAX_SCARS = 400;      // oldest scars fade out past this
   const MAX_IGNITED = 30;     // fires that shots can start per match
+  const MAX_TRACKS = 900;     // mud track segments kept at once
+  const TRACK_LIFE = 900;     // ticks for a mud track to fade out
+  const FIRE_LIGHT = 80;      // how far a fire lights robots, in units
 
   // Robot body geometry (robot-local units, +x = heading). The collision
   // circle has radius C.ROBOT_RADIUS (16); the hull fits just inside it.
@@ -29,6 +32,7 @@
       this.decals = null;         // offscreen canvas: battle scars, rebuilt from `scars`
       this.scars = [];            // { kind: 'crater' | 'char', x, y, r, seed }
       this.ignited = [];          // fires started by shots this match
+      this.tracks = [];           // mud track segments { x1, y1, x2, y2, heading, drive, tick }
       this.world = null;
       this.resize();
     }
@@ -57,6 +61,7 @@
       this.robotFx.clear();
       this.scars = [];
       this.ignited = [];
+      this.tracks = [];
       this.decals = null;
     }
 
@@ -153,11 +158,14 @@
       ctx.drawImage(this.decals, 0, 0, C.ARENA_W, C.ARENA_H);
 
       const now = performance.now();
+      this.updateMud(world);
+      this.drawTracks(ctx, world.tick);
       this.drawFires(ctx, now);
       for (const r of world.robots) if (!r.alive) this.drawWreck(ctx, r);
       if (this.showScans) for (const r of world.robots) if (r.alive) this.drawScan(ctx, r, world.tick);
       for (const p of world.projectiles) this.drawProjectile(ctx, p);
       for (const r of world.robots) if (r.alive) this.drawRobot(ctx, r, r.entryId === selectedEntryId, now);
+      this.drawFireLight(ctx, world, now);
       this.emitAmbientSmoke(world);
       this.drawParticles(ctx);
       for (const r of world.robots) if (r.alive) this.drawLabel(ctx, r, now);
@@ -467,8 +475,7 @@
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       for (const f of fires) {
-        const grow = f.born ? Math.min(1, (now - f.born) / 1500) : 1;
-        const flick = (0.8 + 0.2 * Math.sin(t * 9 + f.phase) * Math.sin(t * 13.7 + f.phase * 2)) * grow;
+        const flick = fireFlicker(f, now);
         const reach = Math.max(14, f.r) * 2 * flick;
         const glow = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, reach);
         glow.addColorStop(0, 'rgba(255,120,30,0.3)');
@@ -500,6 +507,95 @@
           });
         }
       }
+    }
+
+    /** Lay mud tracks and throw droplets for robots driving through mud. */
+    updateMud(world) {
+      for (const r of world.robots) {
+        const f = this.fx(r.id);
+        const moved = f.px === undefined ? 0 : Math.hypot(r.x - f.px, r.y - f.py);
+        f.px = r.x; f.py = r.y;
+        if (!r.alive || !world.inMud(r)) { f.trackX = undefined; continue; }
+        if (f.trackX === undefined) { f.trackX = r.x; f.trackY = r.y; }
+        if (Math.hypot(r.x - f.trackX, r.y - f.trackY) >= 3) {
+          this.tracks.push({ x1: f.trackX, y1: f.trackY, x2: r.x, y2: r.y, heading: r.heading,
+            drive: r.appearance ? r.appearance.drive : 'tracks', tick: world.tick });
+          if (this.tracks.length > MAX_TRACKS) this.tracks.shift();
+          f.trackX = r.x; f.trackY = r.y;
+        }
+        // Droplets flick off the back of the treads while actually moving.
+        if (moved < 0.05 || this.particles.length >= MAX_PARTICLES) continue;
+        const dx = Math.cos(r.heading * DEG), dy = Math.sin(r.heading * DEG), back = r.speed >= 0 ? -1 : 1;
+        for (let i = 0, n = Math.random() < Math.min(0.9, moved * 0.4) ? 1 + (Math.random() < 0.3 ? 1 : 0) : 0; i < n; i++) {
+          const side = Math.random() < 0.5 ? -1 : 1;
+          const sx = r.x + back * dx * 12 - side * dy * 11, sy = r.y + back * dy * 12 + side * dx * 11;
+          const v = 0.6 + Math.random();
+          this.particles.push({
+            kind: 'drop', x: sx, y: sy,
+            vx: back * dx * v - side * dy * (0.3 + Math.random() * 0.7), vy: back * dy * v + side * dx * (0.3 + Math.random() * 0.7),
+            life: 16 + Math.random() * 8, max: 24, size: 1 + Math.random() * 1.3,
+            color: ['#5a4430', '#3e2e1f', '#6e5638'][Math.floor(Math.random() * 3)],
+          });
+        }
+      }
+    }
+
+    /** Fading tread marks, ruts or hover wakes left in mud. */
+    drawTracks(ctx, tick) {
+      if (!this.tracks.length) return;
+      this.tracks = this.tracks.filter((t) => tick - t.tick < TRACK_LIFE && tick >= t.tick);
+      ctx.save();
+      ctx.lineCap = 'round';
+      for (const t of this.tracks) {
+        const a = 1 - (tick - t.tick) / TRACK_LIFE;
+        const nx = -Math.sin(t.heading * DEG), ny = Math.cos(t.heading * DEG);
+        const line = (off, width, color) => {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = width;
+          ctx.beginPath();
+          ctx.moveTo(t.x1 + nx * off, t.y1 + ny * off);
+          ctx.lineTo(t.x2 + nx * off, t.y2 + ny * off);
+          ctx.stroke();
+        };
+        if (t.drive === 'hover') {
+          line(0, 22, 'rgba(30,22,14,' + (0.22 * a).toFixed(3) + ')');
+          continue;
+        }
+        const off = t.drive === 'wheels' ? 12 : 11, width = t.drive === 'wheels' ? 3.5 : 5;
+        for (const side of [-1, 1]) {
+          line(side * off, width, 'rgba(22,15,9,' + (0.5 * a).toFixed(3) + ')');
+          line(side * off - 1.5, 1, 'rgba(130,105,70,' + (0.18 * a).toFixed(3) + ')'); // lit ridge
+        }
+      }
+      ctx.restore();
+    }
+
+    /** Robots and wrecks near burning trees pick up a flickering orange glow on the side facing the fire. */
+    drawFireLight(ctx, world, now) {
+      const fires = (this.fires || []).concat(this.ignited);
+      if (!fires.length) return;
+      const R = C.ROBOT_RADIUS;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const r of world.robots) {
+        let sum = 0, dx = 0, dy = 0;
+        for (const f of fires) {
+          const d = Math.hypot(f.x - r.x, f.y - r.y);
+          if (d >= FIRE_LIGHT || d < 1e-6) continue;
+          const w = (1 - d / FIRE_LIGHT) ** 2 * fireFlicker(f, now);
+          sum += w; dx += (f.x - r.x) / d * w; dy += (f.y - r.y) / d * w;
+        }
+        if (sum < 0.02) continue;
+        const k = Math.min(1, sum), len = Math.hypot(dx, dy) || 1;
+        const lx = r.x + dx / len * R * 0.45, ly = r.y + dy / len * R * 0.45;
+        const glow = ctx.createRadialGradient(lx, ly, 0, lx, ly, R * 1.7);
+        glow.addColorStop(0, 'rgba(255,135,45,' + (0.55 * k).toFixed(3) + ')');
+        glow.addColorStop(0.5, 'rgba(255,110,30,' + (0.22 * k).toFixed(3) + ')');
+        glow.addColorStop(1, 'rgba(255,90,20,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(lx, ly, R * 1.7, 0, TAU); ctx.fill();
+      }
+      ctx.restore();
     }
 
     emitAmbientSmoke(world) {
@@ -535,6 +631,12 @@
             ctx.globalAlpha = 1 - t;
             ctx.fillStyle = p.color;
             ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (1 - t * 0.5), 0, TAU); ctx.fill();
+            break;
+          case 'drop':
+            p.x += p.vx; p.y += p.vy; p.vx *= 0.86; p.vy *= 0.86;
+            ctx.globalAlpha = Math.min(1, 1.6 * (1 - t));
+            ctx.fillStyle = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, TAU); ctx.fill();
             break;
           case 'ember':
             p.x += p.vx + Math.sin(p.life * 0.4) * 0.15; p.y += p.vy; p.vy *= 0.985;
@@ -761,6 +863,13 @@
     for (let i = 0; i < n; i++) p.quadraticCurveTo(pts[i][0], pts[i][1], ...mid(i));
     p.closePath();
     return p;
+  }
+
+  /** Flame strength for a fire right now: flickers around 0.8..1 and grows in over 1.5 s once lit. */
+  function fireFlicker(f, now) {
+    const t = now / 1000;
+    const grow = f.born ? Math.min(1, (now - f.born) / 1500) : 1;
+    return (0.8 + 0.2 * Math.sin(t * 9 + f.phase) * Math.sin(t * 13.7 + f.phase * 2)) * grow;
   }
 
   /** A battle scar on the decal layer: a blast crater or a small char mark. */
