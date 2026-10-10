@@ -174,7 +174,7 @@
     drawScan(ctx, r, tick) {
       const s = r.lastScanFx;
       if (!s || tick - s.tick > 1) return;
-      const reach = 280;
+      const reach = s.range;
       const grad = ctx.createRadialGradient(r.x, r.y, C.ROBOT_RADIUS, r.x, r.y, reach);
       grad.addColorStop(0, hexA(r.color, s.found ? 0.24 : 0.12));
       grad.addColorStop(1, hexA(r.color, 0));

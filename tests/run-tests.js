@@ -185,7 +185,7 @@ test('every robot gets the same budget per tick', () => {
 });
 test('shooting a stationary target destroys it and ends the match', () => {
   const shooter = compile(`Shooter
-l: SCAN 90
+l: SCAN 6
 GET R0, SCAN_DIST
 CMP R0, 0
 JL spin
@@ -195,7 +195,7 @@ FIRE
 WAIT
 JMP l
 spin: GET R1, TURRET
-ADD R1, 45
+ADD R1, 6
 AIM R1
 WAIT
 JMP l`, 0);
@@ -576,6 +576,22 @@ test('RAND streams are per robot: an opponent\'s random calls never change yours
   const w = new BB.World({ entries: [0, 1].map((id) => compile(`Twin\nRAND R0, 1000000\nWAIT`, id)), arena: 'open', seed: 5 });
   w.step();
   assert.notStrictEqual(w.robots[0].vm.regs[0], w.robots[1].vm.regs[0], 'roster slots get distinct streams');
+});
+
+test('SCAN reach shrinks with cone width and is reported by SCAN_RANGE', () => {
+  const probe = (width, foeX) => {
+    const w = new BB.World({ entries: [compile(`Probe\nGET R2, SCAN_RANGE\nSCAN ${width}\nGET R0, SCAN_DIST\nGET R1, SCAN_RANGE\nWAIT`, 0), compile('Foe\nWAIT', 1)], arena: 'open' });
+    Object.assign(w.robots[0], { x: 20, y: 300, turret: 0, targetTurret: 0 });
+    Object.assign(w.robots[1], { x: foeX, y: 300 });
+    w.step();
+    return [...w.robots[0].vm.regs.slice(0, 3)];
+  };
+  assert.deepStrictEqual(BB.World.scanRange(90), 252);
+  assert.deepStrictEqual(BB.World.scanRange(16), 600);
+  assert.deepStrictEqual(probe(90, 20 + 252), [252, 252, 0], 'exactly at range is seen; SCAN_RANGE starts at 0');
+  assert.deepStrictEqual(probe(90, 20 + 253), [-1, 252, 0], 'just past a wide cone\'s reach');
+  assert.deepStrictEqual(probe(16, 20 + 500), [500, 600, 0], 'a narrow cone sees farther');
+  assert.deepStrictEqual(probe(500, 20 + 253), [-1, 252, 0], 'width clamps to 90 before the range is computed');
 });
 
 test('wall damage from being shoved by an enemy is credited to the pusher', () => {

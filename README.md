@@ -153,7 +153,7 @@ Out-of-range values are clamped without an error, so `SPEED 100` gives 5 and `SC
 | Turning | body 8°/tick, turret 20°/tick |
 | Firing | 1 shot per 15 ticks; bullets: speed 10, damage 10 |
 | Health | 100, no healing |
-| Scan / radar | scan cone 1° to 90° (unlimited distance, blocked by obstacles); radar 250 units, nearest bullet only |
+| Scan / radar | scan cone 1° to 90°, reach 2400 / √width (90° reaches 252 units, 16° reaches 600), blocked by obstacles; radar 250 units, nearest bullet only |
 | CPU | 50 cycles per tick, 8 registers, 256 memory words, 64 stack entries, 32-bit integers that wrap around |
 | Robot name | 24 characters |
 | Match length | 6000 ticks |

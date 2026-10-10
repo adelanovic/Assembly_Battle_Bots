@@ -123,7 +123,8 @@ const meanings = {
   MAX_REVERSE: 'Minimum signed speed, in units per tick', ACCELERATION: 'Maximum speed change per tick',
   BODY_TURN_RATE: 'Maximum body degrees per tick', TURRET_TURN_RATE: 'Maximum turret degrees per tick',
   FIRE_COOLDOWN: 'Minimum ticks between shots', BULLET_SPEED: 'Projectile units per tick', BULLET_DAMAGE: 'Health lost per projectile hit',
-  SCAN_MAX_WIDTH: 'Maximum full scan-cone width, in degrees', RADAR_RANGE: 'Maximum radar distance, in units',
+  SCAN_MAX_WIDTH: 'Maximum full scan-cone width, in degrees',
+  SCAN_RANGE_FACTOR: 'Scan reach = floor(factor / √width), in units; narrow cones reach farther',RADAR_RANGE: 'Maximum radar distance, in units',
   MAX_TICKS: 'Competitive match time limit, in ticks',
 };
 for (const [k, v] of Object.entries(C)) out.push(`| \`${k}\` | ${v} | ${meanings[k] || ''} |`);

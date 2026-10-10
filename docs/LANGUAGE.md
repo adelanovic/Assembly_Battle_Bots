@@ -246,7 +246,7 @@ For memory operands, `Rx` means one of `R0`..`R7`. Offsets are numeric literals 
 | `HEAD src` | 1 | Set the desired absolute heading in degrees. The body turns at most 8°/tick. | `HEAD 180` |
 | `AIM src` | 1 | Set the desired absolute turret angle. The turret turns at most 20°/tick, independently of the body. | `AIM R1` |
 | `FIRE` | 1 | Request one shot after movement and turret rotation this tick, if alive and COOLDOWN is 0. Multiple FIRE instructions in one tick still request only one shot. | `FIRE` |
-| `SCAN src` | 3 | Find the nearest living enemy whose body intersects a cone of src degrees (clamped to 1..90) around the current turret. Unlimited range; obstacles block the center-to-center view. Updates SCAN_* immediately; SCAN_DIST is -1 if none. | `SCAN 20` |
+| `SCAN src` | 3 | Find the nearest living enemy whose body intersects a cone of src degrees (clamped to 1..90) around the current turret. Narrow cones reach farther: range = floor(2400 / sqrt(width)), so 90° reaches 252 units, 16° 600 and 4° 1200. Obstacles block the center-to-center view. Updates SCAN_* immediately, including SCAN_RANGE; SCAN_DIST is -1 if none. | `SCAN 20` |
 | `RADAR` | 3 | Find the nearest enemy projectile within 250 units whose velocity points toward you. Obstacles do not block radar. Updates THREAT_* immediately; THREAT_DIST is -1 if none. Approaching does not guarantee a collision. | `RADAR` |
 
 ## Sensors (read with `GET dst, SENSOR`)
@@ -276,6 +276,7 @@ For memory operands, `Rx` means one of `R0`..`R7`. Offsets are numeric literals 
 | `ARENA_W` | Arena width (800). |
 | `ARENA_H` | Arena height (600). |
 | `ALLIES` | Number of living teammates (always 0 in free-for-all). |
+| `SCAN_RANGE` | Center-to-center reach of the last SCAN, set by its width, or 0 before the first SCAN. |
 
 ### Sensor result details
 
@@ -308,6 +309,7 @@ These are default game settings in `js/core/isa.js`, not predefined assembly con
 | `BULLET_SPEED` | 10 | Projectile units per tick |
 | `BULLET_DAMAGE` | 10 | Health lost per projectile hit |
 | `SCAN_MAX_WIDTH` | 90 | Maximum full scan-cone width, in degrees |
+| `SCAN_RANGE_FACTOR` | 2400 | Scan reach = floor(factor / √width), in units; narrow cones reach farther |
 | `RADAR_RANGE` | 250 | Maximum radar distance, in units |
 | `MAX_TICKS` | 6000 | Competitive match time limit, in ticks |
 

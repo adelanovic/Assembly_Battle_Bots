@@ -100,7 +100,10 @@
     return DEFAULT_OBSTACLES.map((o) => ({ ...o }));
   }
 
-  const blankScan =() => ({ dist: -1, angle: 0, x: 0, y: 0, heading: 0, speed: 0 });
+  /** Narrow scan cones reach farther; `width` is already clamped to 1..SCAN_MAX_WIDTH. */
+  const scanRange = (width) => Math.floor(C.SCAN_RANGE_FACTOR / Math.sqrt(width));
+
+  const blankScan =() =>({ dist: -1, angle: 0, x: 0, y: 0, heading: 0, speed: 0 });
   const blankThreat = () => ({ dist: -1, angle: 0, heading: 0 });
 
   class Robot {
@@ -121,6 +124,7 @@
       this.alive = true;
       this.wantFire = false;
       this.scan = blankScan();
+      this.scanRange = 0;       // reach of the last SCAN
       this.threat = blankThreat();
       this.lastHitTick = -1;
       this.lastScanFx = null;   // { tick, angle, width, found } for rendering
@@ -305,6 +309,7 @@
         case 'TICK': return this.tick;
         case 'ENEMIES': return this.robots.filter((o) => o.alive && this.isEnemy(r, o)).length;
         case 'ALLIES': return this.robots.filter((o) => o.alive && o !== r && !this.isEnemy(r, o)).length;
+        case 'SCAN_RANGE': return r.scanRange;
         case 'ARENA_W': return this.width;
         case 'ARENA_H': return this.height;
         default: return 0;
@@ -330,10 +335,13 @@
 
     doScan(r, width) {
       const w = Math.max(1, Math.min(C.SCAN_MAX_WIDTH, width | 0));
+      const range = scanRange(w);
+      r.scanRange = range;
       let best = null, bestD = Infinity;
       for (const o of this.robots) {
         if (!o.alive || !this.isEnemy(r, o)) continue;
         const d = Math.hypot(o.x - r.x, o.y - r.y);
+        if (d > range) continue;
         const ang = G.angleTo(r.x, r.y, o.x, o.y);
         // The cone hits if any part of the target's body is inside it.
         const slack = d > C.ROBOT_RADIUS ? Math.asin(C.ROBOT_RADIUS / d) / G.DEG : 90;
@@ -352,7 +360,7 @@
       } else {
         r.scan = blankScan();
       }
-      r.lastScanFx = { tick: this.tick, angle: r.turret, width: w, found: !!best };
+      r.lastScanFx = { tick: this.tick, angle: r.turret, width: w, range, found: !!best };
     }
 
     doRadar(r) {
@@ -588,6 +596,7 @@
   World.DEFAULT_OBSTACLES = DEFAULT_OBSTACLES;
   World.ARENAS = ARENAS;
   World.makeObstacles = makeObstacles;
+  World.scanRange = scanRange;
   World.COLORS = COLORS;
   World.TEAM_NAMES = TEAM_NAMES;
   World.TEAM_COLORS = TEAM_COLORS;

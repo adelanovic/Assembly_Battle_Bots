@@ -421,7 +421,7 @@
         return;
       }
       const vm = r.vm;
-      const sensors = ['X', 'Y', 'HEADING', 'SPEED', 'HEALTH', 'COOLDOWN', 'TURRET', 'FRONT', 'SCAN_DIST', 'SCAN_ANGLE', 'THREAT_DIST', 'THREAT_ANGLE'];
+      const sensors = ['X', 'Y', 'HEADING', 'SPEED', 'HEALTH', 'COOLDOWN', 'TURRET', 'FRONT', 'SCAN_DIST', 'SCAN_ANGLE', 'SCAN_RANGE', 'THREAT_DIST', 'THREAT_ANGLE'];
       const regs = [...vm.regs].map((v, i) => `<span><i>R${i}</i>${v}</span>`).join('');
       const sens = sensors.map((s) => `<span><i>${s}</i>${this.world.sense(r, BB.ISA.SENSOR_MAP[s].id)}</span>`).join('');
       const state = vm.fault ? `<span class="bad">FAULT — ${esc(vm.fault)}</span>`
@@ -474,7 +474,7 @@
         ['Movement', `speed ${C.MAX_REVERSE}..${C.MAX_SPEED}, acceleration ${C.ACCELERATION}/tick, body turns ${C.BODY_TURN_RATE}°/tick, turret ${C.TURRET_TURN_RATE}°/tick`],
         ['Weapons', `bullet speed ${C.BULLET_SPEED}, damage ${C.BULLET_DAMAGE}, cooldown ${C.FIRE_COOLDOWN} ticks`],
         ['Collisions', 'Hitting a wall or obstacle at speed ≥ 2 deals speed/2 damage. Ramming another robot deals 1 damage to both.'],
-        ['Sensors', `SCAN cone up to ${C.SCAN_MAX_WIDTH}°, blocked by obstacles. RADAR range ${C.RADAR_RANGE}.`],
+        ['Sensors', `SCAN cone up to ${C.SCAN_MAX_WIDTH}°, blocked by obstacles. Narrow cones reach farther: range ${C.SCAN_RANGE_FACTOR} / √width (${BB.World.scanRange(C.SCAN_MAX_WIDTH)} at ${C.SCAN_MAX_WIDTH}°, ${BB.World.scanRange(16)} at 16°). RADAR range ${C.RADAR_RANGE}.`],
         ['Victory', `Last robot standing. After ${C.MAX_TICKS} ticks, highest health wins.`],
         ['Teams', 'In 2v2 / 3v3, teammates are invisible to SCAN and RADAR, can\'t hurt each other, and don\'t count in ENEMIES (use ALLIES). Team B spawns as the mirror image of team A. Last team standing wins; at the time limit, highest total health.'],
       ].map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('') + '</table>';
