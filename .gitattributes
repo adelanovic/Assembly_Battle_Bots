@@ -1,0 +1,4 @@
+# Keep LF line endings in every checkout, regardless of core.autocrlf.
+* text=auto eol=lf
+
+*.png binary

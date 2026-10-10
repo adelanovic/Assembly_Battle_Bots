@@ -2,7 +2,7 @@
 
 Program robots in a small assembly language and watch them fight in a 2D arena.
 
-![Battle Bots: arena, roster and match log](docs/screenshot.png)
+![Battle Bots: a match in progress, with the roster, code editor and CPU inspector](docs/screenshot.png)
 
 ## Quick start
 

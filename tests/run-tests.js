@@ -774,7 +774,9 @@ test('appearance hot-swaps and survives duplication without changing the robot b
 
 test('all appearance combinations render normal, damaged, flashing and wreck states', () => {
   const renderingBB = { ...BB };
-  scriptVm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/ui/renderer.js'), 'utf8'), { BB: renderingBB });
+  for (const file of ['terrain.js', 'renderer.js']) {
+    scriptVm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/ui', file), 'utf8'), { BB: renderingBB });
+  }
   const renderer = Object.create(renderingBB.Renderer.prototype);
   renderer.robotFx = new Map();
   let calls = 0;
