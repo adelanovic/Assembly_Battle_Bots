@@ -154,6 +154,7 @@
       g.fillStyle = v;
       g.fillRect(0, 0, W, H);
 
+      if (world) for (const m of world.mud) drawMud(g, m);
       if (world) for (const o of world.obstacles) drawObstacle(g, o);
 
       // border: steel rim with a soft inner glow
@@ -499,6 +500,48 @@
   }
 
   // ------------------------------------------------------------ helpers
+
+  function drawMud(g, m) {
+    const rad = Math.min(18, m.w / 2, m.h / 2);
+    const path = () => {
+      g.beginPath();
+      g.moveTo(m.x + rad, m.y);
+      g.arcTo(m.x + m.w, m.y, m.x + m.w, m.y + m.h, rad);
+      g.arcTo(m.x + m.w, m.y + m.h, m.x, m.y + m.h, rad);
+      g.arcTo(m.x, m.y + m.h, m.x, m.y, rad);
+      g.arcTo(m.x, m.y, m.x + m.w, m.y, rad);
+      g.closePath();
+    };
+    const grad = g.createRadialGradient(m.x + m.w / 2, m.y + m.h / 2, 4, m.x + m.w / 2, m.y + m.h / 2, Math.max(m.w, m.h) * 0.7);
+    grad.addColorStop(0, '#4a3826');
+    grad.addColorStop(1, '#33281d');
+    g.fillStyle = grad;
+    path();
+    g.fill();
+    // Speckles and puddles from a fixed hash of the patch, so the floor looks the same every redraw.
+    g.save();
+    path();
+    g.clip();
+    let h = (m.x * 73856093) ^ (m.y * 19349663) ^ (m.w * 83492791);
+    const rnd = () => { h = Math.imul(h ^ (h >>> 13), 0x5BD1E995); h ^= h >>> 15; return (h >>> 0) / 4294967296; };
+    for (let i = 0, n = Math.round(m.w * m.h / 120); i < n; i++) {
+      g.fillStyle = rnd() < 0.5 ? 'rgba(20,14,8,0.35)' : 'rgba(120,95,60,0.18)';
+      g.beginPath();
+      g.arc(m.x + rnd() * m.w, m.y + rnd() * m.h, 1 + rnd() * 2.5, 0, Math.PI * 2);
+      g.fill();
+    }
+    for (let i = 0; i < 2; i++) {
+      g.fillStyle = 'rgba(110,130,150,0.10)';
+      g.beginPath();
+      g.ellipse(m.x + (0.2 + rnd() * 0.6) * m.w, m.y + (0.2 + rnd() * 0.6) * m.h, 8 + rnd() * 10, 4 + rnd() * 5, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.restore();
+    g.strokeStyle = 'rgba(15,10,5,0.6)';
+    g.lineWidth = 1.5;
+    path();
+    g.stroke();
+  }
 
   function drawObstacle(g, o) {
     // drop shadow

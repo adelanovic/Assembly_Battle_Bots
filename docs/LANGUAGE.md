@@ -277,6 +277,7 @@ For memory operands, `Rx` means one of `R0`..`R7`. Offsets are numeric literals 
 | `ARENA_H` | Arena height (600). |
 | `ALLIES` | Number of living teammates (always 0 in free-for-all). |
 | `SCAN_RANGE` | Center-to-center reach of the last SCAN, set by its width, or 0 before the first SCAN. |
+| `MUD` | 1 if your center is in mud (speed capped at 2 either way), otherwise 0. |
 
 ### Sensor result details
 
@@ -284,6 +285,7 @@ For memory operands, `Rx` means one of `R0`..`R7`. Offsets are numeric literals 
 - `SCAN_*` values are a snapshot from the most recent `SCAN`, not a continuously updated track. They remain unchanged until another scan, even if the target moves or dies. `SCAN_ANGLE` is the absolute bearing; `SCAN_HEADING` is the target's body heading. A negative `SCAN_SPEED` means the target is reversing.
 - `THREAT_*` values likewise come from the most recent `RADAR`. `THREAT_ANGLE` is the bearing to the projectile; `THREAT_HEADING` is its travel direction. Radar tests projectile velocity toward your current position, without predicting your own future motion.
 - Before the first scan/radar call, and after a call finds nothing, the corresponding distance is -1 and all its other result fields are 0. Check the distance before using the other fields.
+- Mud patches (brown, on Classic and Random) cap your speed at 2 in either direction while your center is inside; the cap applies immediately and lifts as soon as you leave. `GET R0, MUD` reads 1 in mud. Mud does not block movement, bullets, `SCAN`, `RADAR` or `FRONT`.
 - Teammates are excluded from `SCAN`, `RADAR` and `ENEMIES`. Their bullets pass through you. `ALLIES` excludes yourself. `FRONT` checks walls and obstacles only, using the full circular body, even near corners; it measures forward along body heading regardless of whether you are reversing.
 
 ## Simulation constants
@@ -311,6 +313,7 @@ These are default game settings in `js/core/isa.js`, not predefined assembly con
 | `SCAN_MAX_WIDTH` | 90 | Maximum full scan-cone width, in degrees |
 | `SCAN_RANGE_FACTOR` | 2400 | Scan reach = floor(factor / √width), in units; narrow cones reach farther |
 | `RADAR_RANGE` | 250 | Maximum radar distance, in units |
+| `MUD_MAX_SPEED` | 2 | Speed cap, in either direction, while your center is in mud |
 | `MAX_TICKS` | 6000 | Competitive match time limit, in ticks |
 
 At 0 health a robot is destroyed. In free-for-all, the last living robot wins; at the time limit, the living robot with highest health wins, with an equal-health tie producing a draw. Team matches use the last surviving team or highest total living-team health, with a tie producing a draw. Browser practice without an opponent has no victory/time-limit check; the CLI stops practice runs after 6000 ticks.

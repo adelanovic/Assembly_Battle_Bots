@@ -36,7 +36,7 @@ node tools/balance.js 20 > docs/balance-results.json  # compare arenas, bot cons
 | **⏭ Step** (`.`) | Advance exactly one tick. The CPU inspector and the yellow gutter marker show the next line each robot will execute. |
 | **↺ Reset** (`R`) | Respawn every robot with its *applied* code. The seed decides spawn points and `RAND`, so a seed always replays the same match. |
 | **Mode** | **Free-for-all**, **Teams 2v2** or **Teams 3v3**. In a team mode each robot card gets **A / B / Bench** buttons, and **⧉** duplicates a robot so you can field several copies. A team match only starts when both teams have exactly the right number of working robots. |
-| **Arena** | **Classic** is the fixed default layout. **Random** generates a mirrored obstacle layout from the seed, so 🎲 gives a new map and the same seed always gives the same map. **Open** has no obstacles, which is useful for testing aim and dodging. |
+| **Arena** | **Classic** is the fixed default layout, with four mud patches. **Random** generates a mirrored layout of obstacles and mud from the seed, so 🎲 gives a new map and the same seed always gives the same map. **Open** has no obstacles or mud, which is useful for testing aim and dodging. |
 | **Speed** | 0.1× to 60× (6 to 3600 ticks per second). |
 | **Scans** | Show or hide each robot's scan cone. |
 | **+ New robot / 📂 Load .asm files… / + Add example** | Add robots. Loading accepts several files at once, and you can also drag and drop `.asm` files onto the page. **Each file becomes one robot.** |
@@ -149,7 +149,7 @@ Out-of-range values are clamped without an error, so `SPEED 100` gives 5 and `SC
 
 | Thing | Limit |
 |---|---|
-| Speed | −3 to 5 units/tick, acceleration 0.5/tick |
+| Speed | −3 to 5 units/tick, acceleration 0.5/tick; capped at 2 either way while your center is in mud |
 | Turning | body 8°/tick, turret 20°/tick |
 | Firing | 1 shot per 15 ticks; bullets: speed 10, damage 10 |
 | Health | 100, no healing |

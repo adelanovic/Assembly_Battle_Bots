@@ -40,9 +40,9 @@
    * always reproduces the same map.
    */
   const ARENAS = {
-    classic: { label: 'Classic', desc: 'The fixed default layout.' },
-    random: { label: 'Random', desc: 'Symmetric obstacles generated from the seed.' },
-    open: { label: 'Open', desc: 'No obstacles.' },
+    classic: { label: 'Classic', desc: 'The fixed default layout, with four mud patches.' },
+    random: { label: 'Random', desc: 'Symmetric obstacles and mud generated from the seed.' },
+    open: { label: 'Open', desc: 'No obstacles or mud.' },
   };
 
   // Random-map rules. GAP > robot diameter keeps every corridor passable:
@@ -100,6 +100,47 @@
     return DEFAULT_OBSTACLES.map((o) => ({ ...o }));
   }
 
+  /*
+   * Mud: drivable patches that cap speed at MUD_MAX_SPEED while a robot's
+   * centre is inside. Bullets, SCAN and RADAR pass over it. Patches come in
+   * pairs mirrored through the centre, like obstacles, so neither side is favoured.
+   */
+  const DEFAULT_MUD = [
+    { x: 80, y: 250, w: 110, h: 90 },
+    { x: 610, y: 260, w: 110, h: 90 },
+    { x: 330, y: 40, w: 140, h: 70 },
+    { x: 330, y: 490, w: 140, h: 70 },
+  ];
+
+  function generateRandomMud(seed, obstacles) {
+    // Separate stream: adding mud leaves every seed's obstacle layout unchanged.
+    const rng = G.makeRng((seed ^ 0x5BD1E995) >>> 0);
+    const W = C.ARENA_W, H = C.ARENA_H, EDGE = 20, GAP = 10;
+    const between = (lo, hi) => lo + Math.floor(rng() * (hi - lo + 1));
+    const patches = [];
+    const clear = (r) => r.x >= EDGE && r.y >= EDGE && r.x + r.w <= W - EDGE && r.y + r.h <= H - EDGE &&
+      obstacles.concat(patches).every((o) => r.x >= o.x + o.w + GAP || o.x >= r.x + r.w + GAP ||
+                                              r.y >= o.y + o.h + GAP || o.y >= r.y + r.h + GAP);
+    const pairs = between(1, 2);
+    for (let made = 0, tries = 0; made < pairs && tries < GEN.ATTEMPTS; tries++) {
+      const w = between(70, 150), h = between(50, 110);
+      const r = { x: between(0, W - w), y: between(0, H - h), w, h };
+      const twin = { x: W - r.x - w, y: H - r.y - h, w, h };
+      if (!clear(r)) continue;
+      patches.push(r);
+      if (!clear(twin)) { patches.pop(); continue; } // also rejects twin overlapping r
+      patches.push(twin);
+      made++;
+    }
+    return patches;
+  }
+
+  function makeMud(arena, seed, obstacles) {
+    if (arena === 'open') return [];
+    if (arena === 'random') return generateRandomMud(seed, obstacles);
+    return DEFAULT_MUD.map((m) => ({ ...m }));
+  }
+
   /** Narrow scan cones reach farther; `width` is already clamped to 1..SCAN_MAX_WIDTH. */
   const scanRange = (width) => Math.floor(C.SCAN_RANGE_FACTOR / Math.sqrt(width));
 
@@ -143,12 +184,16 @@
      *   seed:      integer RNG seed (spawn positions, RAND)
      *   arena:     'classic' | 'random' | 'open'
      *   obstacles: optional explicit array of rects (overrides `arena`)
+     *   mud:       optional explicit array of mud rects; defaults to the
+     *              arena's mud, or none when `obstacles` is explicit
      */
-    constructor({ entries, seed = 1, arena = 'classic', obstacles = null }) {
+    constructor({ entries, seed = 1, arena = 'classic', obstacles = null, mud = null }) {
       this.width = C.ARENA_W;
       this.height = C.ARENA_H;
       this.arena = ARENAS[arena] ? arena : 'classic';
       this.obstacles = obstacles ? obstacles.map((o) => ({ ...o })) : makeObstacles(this.arena, seed);
+      this.mud = mud ? mud.map((m) => ({ ...m }))
+        : obstacles ? [] : makeMud(this.arena, seed, this.obstacles);
       this.seed = seed;
       this.rng = G.makeRng(seed);
       this.tick = 0;
@@ -310,6 +355,7 @@
         case 'ENEMIES': return this.robots.filter((o) => o.alive && this.isEnemy(r, o)).length;
         case 'ALLIES': return this.robots.filter((o) => o.alive && o !== r && !this.isEnemy(r, o)).length;
         case 'SCAN_RANGE': return r.scanRange;
+        case 'MUD': return this.inMud(r) ? 1 : 0;
         case 'ARENA_W': return this.width;
         case 'ARENA_H': return this.height;
         default: return 0;
@@ -327,6 +373,10 @@
       if (dy < -1e-9) t = Math.min(t, (R - r.y) / dy);
       for (const o of this.obstacles) t = Math.min(t, G.sweptCircleRect(r.x, r.y, dx, dy, R, o));
       return Math.max(0, t);
+    }
+
+    inMud(r) {
+      return this.mud.some((m) => G.pointInRect(r.x, r.y, m));
     }
 
     lineOfSight(x1, y1, x2, y2) {
@@ -424,6 +474,8 @@
 
       const dv = r.targetSpeed - r.speed;
       r.speed += Math.sign(dv) * Math.min(Math.abs(dv), C.ACCELERATION);
+      // Mud bogs the robot down at once; it accelerates normally again once out.
+      if (this.inMud(r)) r.speed = Math.max(-C.MUD_MAX_SPEED, Math.min(C.MUD_MAX_SPEED, r.speed));
 
       r.x += Math.cos(r.heading * G.DEG) * r.speed;
       r.y += Math.sin(r.heading * G.DEG) * r.speed;
@@ -596,6 +648,8 @@
   World.DEFAULT_OBSTACLES = DEFAULT_OBSTACLES;
   World.ARENAS = ARENAS;
   World.makeObstacles = makeObstacles;
+  World.DEFAULT_MUD = DEFAULT_MUD;
+  World.makeMud = makeMud;
   World.scanRange = scanRange;
   World.COLORS = COLORS;
   World.TEAM_NAMES = TEAM_NAMES;

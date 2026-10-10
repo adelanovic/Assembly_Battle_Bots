@@ -594,6 +594,49 @@ test('SCAN reach shrinks with cone width and is reported by SCAN_RANGE', () => {
   assert.deepStrictEqual(probe(500, 20 + 253), [-1, 252, 0], 'width clamps to 90 before the range is computed');
 });
 
+test('mud caps speed while the center is inside, and MUD reports it', () => {
+  const patch = { x: 200, y: 250, w: 100, h: 100 };
+  const w = new BB.World({ entries: [compile('Racer\nSPEED 5\nGET R0, MUD\nGET R1, SPEED\nWAIT', 0)], obstacles: [], mud: [patch] });
+  const r = w.robots[0];
+  Object.assign(r, { x: 100, y: 300, heading: 0, targetHeading: 0, speed: 5, targetSpeed: 5 });
+  const trace = [];
+  for (let t = 0; t < 100; t++) { const from = r.x; w.step(); trace.push({ from, speed: r.speed, mud: r.vm.regs[0] }); }
+  // The cap uses where the robot starts the tick: it can arrive at full speed, then bogs down.
+  for (const s of trace) {
+    if (BB.geo.pointInRect(s.from, 300, patch)) assert.ok(s.speed <= BB.CONFIG.MUD_MAX_SPEED, `speed ${s.speed} in mud from x=${s.from}`);
+  }
+  assert.ok(trace.filter((s) => BB.geo.pointInRect(s.from, 300, patch)).length >= 45, 'crossing 100 units of mud takes ~50 ticks');
+  assert.ok(trace.some((s) => s.mud === 1) && trace.some((s) => s.mud === 0), 'MUD toggles on and off');
+  assert.strictEqual(trace[trace.length - 1].speed, 5, 'full speed again after leaving the mud');
+  // Reversing is capped too.
+  Object.assign(r, { x: 250, y: 300, speed: -3, targetSpeed: -3 });
+  w.robots[0].vm = new BB.VM(BB.assemble('Back\nWAIT').program, w.makeIO(r));
+  w.step();
+  assert.strictEqual(r.speed, -BB.CONFIG.MUD_MAX_SPEED);
+});
+
+test('mud is mirrored, clear of obstacles, and absent on Open or with explicit obstacles', () => {
+  const W = BB.CONFIG.ARENA_W, H = BB.CONFIG.ARENA_H;
+  const entries = [compile('A\nWAIT', 0), compile('B\nWAIT', 1)];
+  const key = (m) => `${m.x},${m.y},${m.w},${m.h}`;
+  for (let seed = 1; seed <= 50; seed++) {
+    const w = new BB.World({ entries, seed, arena: 'random' });
+    assert.ok(w.mud.length >= 2, `seed ${seed}: no mud`);
+    const set = new Set(w.mud.map(key));
+    for (const m of w.mud) {
+      assert.ok(set.has(key({ x: W - m.x - m.w, y: H - m.y - m.h, w: m.w, h: m.h })), `seed ${seed}: unmirrored mud`);
+      for (const o of w.obstacles) {
+        const overlap = m.x < o.x + o.w && o.x < m.x + m.w && m.y < o.y + o.h && o.y < m.y + m.h;
+        assert.ok(!overlap, `seed ${seed}: mud overlaps an obstacle`);
+      }
+    }
+    assert.deepStrictEqual(w.obstacles, BB.World.makeObstacles('random', seed), 'mud leaves obstacle layouts unchanged');
+  }
+  assert.deepStrictEqual(new BB.World({ entries, arena: 'classic' }).mud, BB.World.DEFAULT_MUD);
+  assert.deepStrictEqual(new BB.World({ entries, arena: 'open' }).mud, []);
+  assert.deepStrictEqual(new BB.World({ entries, obstacles: [] }).mud, []);
+});
+
 test('wall damage from being shoved by an enemy is credited to the pusher', () => {
   const entries = [0, 1].map((id) => compile(`Bot${id}\nWAIT`, id));
   const w = new BB.World({ entries, arena: 'open' });

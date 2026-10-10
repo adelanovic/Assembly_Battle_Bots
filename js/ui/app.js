@@ -469,7 +469,8 @@
         Object.entries(BB.ISA.APPEARANCE).map(([key, spec]) => `<tr><td><code>.${key} preset</code></td><td>${spec.choices.join(', ')}. Default: ${spec.default}.</td></tr>`).join('') +
         '</table><p>Put these optional directives below the name, before labels, constants or instructions. Each may appear once. They change appearance only: collision size, movement, bullet origin and damage stay the same. Twin turrets still fire one shot.</p>';
       html += '<h3>Arena rules</h3><table class="ref">' + [
-        ['Arena', `${C.ARENA_W} × ${C.ARENA_H}, robot radius ${C.ROBOT_RADIUS}. Layout: Classic, Open, or Random (mirrored obstacles generated from the seed). Don't hard-code obstacle positions; use FRONT and SCAN.`],
+        ['Arena', `${C.ARENA_W} × ${C.ARENA_H}, robot radius ${C.ROBOT_RADIUS}. Layout: Classic, Open, or Random (mirrored obstacles and mud generated from the seed). Don't hard-code obstacle positions; use FRONT and SCAN.`],
+        ['Mud', `Brown patches. While your center is in mud, speed is capped at ${C.MUD_MAX_SPEED} either way; GET MUD reads 1. Bullets, SCAN and RADAR pass over it. Open has none.`],
         ['Budget', `${C.CYCLES_PER_TICK} cycles per robot per tick`],
         ['Movement', `speed ${C.MAX_REVERSE}..${C.MAX_SPEED}, acceleration ${C.ACCELERATION}/tick, body turns ${C.BODY_TURN_RATE}°/tick, turret ${C.TURRET_TURN_RATE}°/tick`],
         ['Weapons', `bullet speed ${C.BULLET_SPEED}, damage ${C.BULLET_DAMAGE}, cooldown ${C.FIRE_COOLDOWN} ticks`],

@@ -33,6 +33,7 @@
     SCAN_MAX_WIDTH: 90,    // degrees
     SCAN_RANGE_FACTOR: 2400, // scan range = floor(factor / sqrt(width)): 90° reaches 252, 16° 600
     RADAR_RANGE: 250,      // units
+    MUD_MAX_SPEED: 2,      // speed cap, both directions, while your centre is in mud
 
     MAX_TICKS: 6000,       // time limit; highest health wins after this
   };
@@ -125,6 +126,7 @@
     { name: 'ARENA_H', desc: 'Arena height (600).' },
     { name: 'ALLIES', desc: 'Number of living teammates (always 0 in free-for-all).' },
     { name: 'SCAN_RANGE', desc: 'Center-to-center reach of the last SCAN, set by its width, or 0 before the first SCAN.' },
+    { name: 'MUD', desc: '1 if your center is in mud (speed capped at 2 either way), otherwise 0.' },
   ];
   SENSORS.forEach((s, i) => { s.id = i; });
 

@@ -83,6 +83,7 @@ for (const [key, value] of [
   ['FIRE_COOLDOWN', 10], ['FIRE_COOLDOWN', 20],
   ['BULLET_SPEED', 8], ['BULLET_SPEED', 12], ['MAX_SPEED', 4],
   ['SCAN_RANGE_FACTOR', 1800], ['SCAN_RANGE_FACTOR', 3200],
+  ['MUD_MAX_SPEED', 1], ['MUD_MAX_SPEED', 5],
 ])result.ruleVariants[`${key}=${value}`] = ffa(originalSources, { [key]: value });
 
 const entries = compile(originalSources);
