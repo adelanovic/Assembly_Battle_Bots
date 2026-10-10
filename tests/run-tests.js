@@ -850,6 +850,55 @@ test('renderer effects use event-time state, land clear of the hull and freeze w
   renderer.drawRobot(context, b, false, 1000);
 });
 
+test('victory card draws free-for-all wins, team wins with fallen teammates, and draws', () => {
+  const renderingBB = { ...BB };
+  for (const file of ['terrain.js', 'renderer.js']) {
+    scriptVm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/ui', file), 'utf8'), { BB: renderingBB, performance });
+  }
+  const texts = [];
+  const context = new Proxy({}, { get(target, key) {
+    if (String(key).startsWith('create')) return () => ({ addColorStop() {} });
+    if (key === 'measureText') return (text) => ({ width: text.length * 10 });
+    return (...args) => {
+      if (key === 'fillText') texts.push(args[0]);
+      for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value));
+    };
+  } });
+  const card = (world) => {
+    const renderer = Object.create(renderingBB.Renderer.prototype);
+    Object.assign(renderer, { robotFx: new Map() });
+    texts.length = 0;
+    renderer.drawBanner(context, world, 1000);
+    renderer.drawBanner(context, world, 2000); // fully faded in
+    return texts.join(' | ');
+  };
+
+  const ffa = new BB.World({ entries: [compile('Champion With A Very Long Name\nWAIT', 0), compile('Loser\nWAIT', 1)], arena: 'open' });
+  ffa.robots[0].stats = { shots: 8, hits: 6, damageDealt: 60 };
+  ffa.damage(ffa.robots[1], 100, ffa.robots[0], 'shot');
+  ffa.step();
+  assert.strictEqual(ffa.winner, ffa.robots[0]);
+  const ffaText = card(ffa);
+  assert.match(ffaText, /V I C T O R Y/);
+  assert.match(ffaText, /Last robot standing/);
+  assert.match(ffaText, /75%/);
+  assert.match(ffaText, /Champion.*…/, 'long names are shortened to fit');
+
+  const teams = new BB.World({ entries: [0, 1, 2].map((id) => ({ ...compile(`Bot${id}\nWAIT`, id), team: id < 2 ? 0 : 1 })), arena: 'open' });
+  teams.damage(teams.robots[1], 100, teams.robots[2], 'shot'); // a team A member falls...
+  teams.damage(teams.robots[2], 100, teams.robots[0], 'shot'); // ...but team A wins
+  teams.step();
+  assert.strictEqual(teams.winnerTeam, 0);
+  const teamText = card(teams);
+  assert.match(teamText, /Team A/);
+  assert.match(teamText, /destroyed/);
+
+  const draw = new BB.World({ entries: [compile('A\nWAIT', 0), compile('B\nWAIT', 1)], arena: 'open' });
+  for (const r of draw.robots) draw.damage(r, 100, null, 'shot');
+  draw.step();
+  assert.match(card(draw), /DRAW.*Everyone was destroyed/);
+});
+
 test('Stacker balances nested calls and register saves across CPU budget boundaries', () => {
   const example = BB.EXAMPLES.find((ex) => ex.file === 'stacker.asm');
   const compiled = BB.assemble(example.source);

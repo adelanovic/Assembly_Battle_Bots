@@ -203,6 +203,7 @@
       this.log = [];
       this.over = false;
       this.winner = null;      // Robot, or null for a draw
+      this.endReason = null;   // why the match ended, e.g. 'last robot standing'
       this.nextProjectileId = 1;
 
       const used = new Map();
@@ -635,12 +636,14 @@
 
     finishTeams(team, reason) {
       this.over = true;
+      this.endReason = reason;
       this.winnerTeam = team;
       this.addLog(team === null ? `Draw (${reason}).` : `🏆 Team ${TEAM_NAMES[team]} wins (${reason}).`, 'win');
     }
 
     finish(winner, reason) {
       this.over = true;
+      this.endReason = reason;
       this.winner = winner;
       this.addLog(winner ? `🏆 ${winner.name} wins (${reason}).` : `Draw (${reason}).`, 'win');
     }

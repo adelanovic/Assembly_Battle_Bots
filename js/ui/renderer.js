@@ -70,6 +70,7 @@
       this.casings = [];
       this.decals = null;
       this.lastTick = undefined;
+      this.overAt = undefined;    // when the victory card started fading in
     }
 
     fx(id) {
@@ -265,7 +266,7 @@
       this.drawParticles(ctx);
       for (const r of world.robots) if (r.alive) this.drawLabel(ctx, r, now);
 
-      if (world.over) this.drawBanner(ctx, world);
+      if (world.over) this.drawBanner(ctx, world, now);
       for (const f of this.robotFx.values()) { if (f.flash > 0) f.flash--; if (f.muzzle > 0) f.muzzle--; }
     }
 
@@ -625,7 +626,7 @@
       ctx.fillText(label, r.x, ty);
     }
 
-    drawWreck(ctx, r) {
+    drawWreck(ctx, r, label = true) {
       ctx.save();
       ctx.translate(r.x, r.y);
       // scorch mark on the floor
@@ -652,6 +653,7 @@
       ctx.beginPath(); ctx.arc(0, 0, 6.5, 0, TAU); ctx.fill();
       ctx.restore();
 
+      if (!label) return;
       ctx.font = '11px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillStyle = '#6b7385';
@@ -922,26 +924,150 @@
       this.particles = keep;
     }
 
-    drawBanner(ctx, world) {
-      let text = world.winner ? `${world.winner.name} wins!` : 'Draw!';
-      let color = world.winner ? world.winner.color : '#e8ecf3';
-      if (world.teamMode && world.winnerTeam !== null) {
-        text = `Team ${BB.World.TEAM_NAMES[world.winnerTeam]} wins!`;
-        color = BB.World.TEAM_COLORS[world.winnerTeam][0];
+    /**
+     * End-of-match card: the winner (or winning team) rendered large on a
+     * spotlit podium, still wearing its dents and mud, with its stats.
+     * Fades and scales in over 0.6 s.
+     */
+    drawBanner(ctx, world, now) {
+      if (this.overAt === undefined) this.overAt = now;
+      const ease = 1 - (1 - Math.min(1, (now - this.overAt) / 600)) ** 3;
+      const W = C.ARENA_W, H = C.ARENA_H;
+      const teamWin = world.teamMode && world.winnerTeam !== null;
+      const heroes = teamWin ? world.robots.filter((r) => r.team === world.winnerTeam).slice(0, 3)
+        : world.winner ? [world.winner] : [];
+      const color = teamWin ? BB.World.TEAM_COLORS[world.winnerTeam][0] : world.winner ? world.winner.color : '#c9d0dc';
+      const reason = world.endReason ? world.endReason[0].toUpperCase() + world.endReason.slice(1) : '';
+
+      ctx.save();
+      ctx.globalAlpha = ease;
+      ctx.fillStyle = 'rgba(6,7,10,0.62)';
+      ctx.fillRect(0, 0, W, H);
+      const pw = 480, ph = 270, px = (W - pw) / 2, py = (H - ph) / 2 + (1 - ease) * 20;
+      ctx.shadowColor = hexA(color, 0.45);
+      ctx.shadowBlur = 24;
+      ctx.fillStyle = 'rgba(16,19,26,0.94)';
+      roundRect(ctx, px, py, pw, ph, 12);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = hexA(color, 0.7);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      if (!heroes.length) {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = color;
+        ctx.font = '700 40px system-ui, sans-serif';
+        ctx.fillText('DRAW', W / 2, py + 120);
+        ctx.fillStyle = '#aab2c2';
+        ctx.font = '14px system-ui, sans-serif';
+        ctx.fillText(reason, W / 2, py + 148);
+      } else {
+        const hx = px + 125, hy = py + 135;
+        // Spotlit podium with embers drifting up around the winner.
+        const spot = ctx.createRadialGradient(hx, hy + 32, 4, hx, hy + 32, 110);
+        spot.addColorStop(0, hexA(color, 0.3));
+        spot.addColorStop(1, hexA(color, 0));
+        ctx.fillStyle = spot;
+        ctx.beginPath(); ctx.ellipse(hx, hy + 32, 110, 46, 0, 0, TAU); ctx.fill();
+        ctx.save();
+        roundRect(ctx, px, py, pw, ph, 12);
+        ctx.clip();
+        for (let i = 0; i < 16; i++) {
+          const rise = (now / 1000 * 0.35 + i * 0.137) % 1;
+          ctx.globalAlpha = ease * (1 - rise) * 0.8;
+          ctx.fillStyle = i % 3 ? '#ffb347' : '#ff7a2f';
+          ctx.beginPath();
+          ctx.arc(hx + Math.sin(i * 12.9898) * 85 + Math.sin(now / 700 + i) * 4, hy + 60 - rise * 170, 1.2 + (i % 2) * 0.6, 0, TAU);
+          ctx.fill();
+        }
+        ctx.restore();
+        ctx.globalAlpha = ease;
+        // The robots themselves, posed with a slowly sweeping turret. Fallen teammates show as wrecks.
+        const slots = heroes.length === 1 ? [[0, 0, 3.6]]
+          : heroes.length === 2 ? [[-48, 0, 2.4], [48, 0, 2.4]]
+          : [[-55, -28, 2.1], [55, -28, 2.1], [0, 40, 2.1]];
+        heroes.forEach((r, i) => {
+          const [ox, oy, scale] = slots[i];
+          const pose = Object.create(r);
+          Object.assign(pose, { x: 0, y: 0, heading: -20, turret: -20 + Math.sin(now / 900 + i * 1.7) * 25, speed: 0, vm: { halted: false, fault: null } });
+          ctx.save();
+          ctx.translate(hx + ox, hy + oy);
+          ctx.scale(scale * (0.85 + 0.15 * ease), scale * (0.85 + 0.15 * ease));
+          if (r.alive) this.drawRobot(ctx, pose, false, now); else this.drawWreck(ctx, pose, false);
+          ctx.restore();
+        });
+
+        const tx = px + 250, maxW = pw - 270;
+        ctx.textAlign = 'left';
+        ctx.fillStyle = hexA(color, 0.9);
+        ctx.font = '700 12px system-ui, sans-serif';
+        ctx.fillText('V I C T O R Y', tx, py + 48);
+        ctx.fillStyle = color;
+        ctx.font = '700 28px system-ui, sans-serif';
+        ctx.fillText(fitText(ctx, teamWin ? `Team ${BB.World.TEAM_NAMES[world.winnerTeam]}` : heroes[0].name, maxW), tx, py + 82);
+        ctx.fillStyle = '#aab2c2';
+        ctx.font = '13px system-ui, sans-serif';
+        ctx.fillText(fitText(ctx, reason, maxW), tx, py + 102);
+        if (teamWin) this.drawTeamLines(ctx, heroes, tx, py + 132, maxW);
+        else this.drawWinnerStats(ctx, heroes[0], tx, py + 124);
       }
-      ctx.fillStyle = 'rgba(10,12,18,0.72)';
-      ctx.fillRect(0, C.ARENA_H / 2 - 44, C.ARENA_W, 88);
       ctx.textAlign = 'center';
-      ctx.font = '700 36px system-ui, sans-serif';
-      ctx.fillStyle = color;
-      ctx.fillText(text, C.ARENA_W / 2, C.ARENA_H / 2 + 6);
-      ctx.font = '13px system-ui, sans-serif';
-      ctx.fillStyle = '#aab2c2';
-      ctx.fillText(`tick ${world.tick} · press Rematch to play again`, C.ARENA_W / 2, C.ARENA_H / 2 + 30);
+      ctx.fillStyle = '#7d8696';
+      ctx.font = '12px system-ui, sans-serif';
+      ctx.fillText(`tick ${world.tick} · press Rematch to play again`, W / 2, py + ph - 16);
+      ctx.restore();
+    }
+
+    /** Health bar and a 2×2 grid of shots, hits, accuracy and damage dealt. */
+    drawWinnerStats(ctx, r, x, y) {
+      const hp = Math.max(0, r.health / C.MAX_HEALTH);
+      ctx.fillStyle = '#7d8696';
+      ctx.font = '11px system-ui, sans-serif';
+      ctx.fillText(`Health ${Math.ceil(r.health)} / ${C.MAX_HEALTH}`, x, y);
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      roundRect(ctx, x, y + 6, 190, 6, 3); ctx.fill();
+      ctx.fillStyle = hp > 0.5 ? '#66d17a' : hp > 0.25 ? '#ffc94d' : '#ff5a5a';
+      if (hp > 0) { roundRect(ctx, x, y + 6, 190 * hp, 6, 3); ctx.fill(); }
+      const { shots, hits, damageDealt } = r.stats;
+      const cells = [['Shots', shots], ['Hits', hits], ['Accuracy', shots ? `${Math.round(hits / shots * 100)}%` : '–'], ['Damage dealt', damageDealt]];
+      cells.forEach(([label, value], i) => {
+        const cx = x + (i % 2) * 105, cy = y + 38 + Math.floor(i / 2) * 42;
+        ctx.fillStyle = '#7d8696';
+        ctx.font = '11px system-ui, sans-serif';
+        ctx.fillText(label, cx, cy);
+        ctx.fillStyle = '#e8ecf3';
+        ctx.font = '600 18px system-ui, sans-serif';
+        ctx.fillText(String(value), cx, cy + 20);
+      });
+    }
+
+    /** One line per team member: name, then health or "destroyed", hits and damage. */
+    drawTeamLines(ctx, members, x, y, maxW) {
+      members.forEach((r, i) => {
+        const ly = y + i * 38;
+        ctx.fillStyle = r.color;
+        ctx.beginPath(); ctx.arc(x + 5, ly - 4, 4, 0, TAU); ctx.fill();
+        ctx.fillStyle = r.alive ? '#e8ecf3' : '#7d8696';
+        ctx.font = '600 14px system-ui, sans-serif';
+        ctx.fillText(fitText(ctx, r.name, maxW - 16), x + 16, ly);
+        ctx.fillStyle = '#7d8696';
+        ctx.font = '12px system-ui, sans-serif';
+        const status = r.alive ? `HP ${Math.ceil(r.health)}` : 'destroyed';
+        ctx.fillText(`${status} · ${r.stats.hits} hits · ${r.stats.damageDealt} damage`, x + 16, ly + 16);
+      });
     }
   }
 
   // ------------------------------------------------------------ helpers
+
+  /** Shorten text with an ellipsis until it fits in maxWidth at the current font. */
+  function fitText(ctx, text, maxWidth) {
+    if (ctx.measureText(text).width <= maxWidth) return text;
+    let t = text;
+    while (t.length > 1 && ctx.measureText(t + '…').width > maxWidth) t = t.slice(0, -1);
+    return t + '…';
+  }
 
   function roundRect(ctx, x, y, w, h, r) {
     r = Math.min(r, w / 2, h / 2);
