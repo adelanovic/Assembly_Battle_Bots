@@ -569,36 +569,81 @@
     }
   }
 
+  /**
+   * An organic closed outline around (cx, cy) with half-extents (a, b), its
+   * edge pushed in and out by smooth looping noise of up to `wobble` units.
+   * `square` is the corner exponent: 1 gives an ellipse, smaller values hug
+   * a rectangle more tightly.
+   */
+  function blobPath(rnd, cx, cy, a, b, wobble, square = 1) {
+    const waves = [[3 + Math.floor(rnd() * 3), 0.6], [7 + Math.floor(rnd() * 5), 0.3], [15 + Math.floor(rnd() * 9), 0.12]]
+      .map(([k, amp]) => ({ k, amp, phase: rnd() * Math.PI * 2 }));
+    const n = Math.max(24, Math.round((a + b) * 1.2));
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const t = i / n * Math.PI * 2, c = Math.cos(t), s = Math.sin(t);
+      const off = wobble * waves.reduce((sum, w) => sum + w.amp * Math.sin(w.k * t + w.phase), 0);
+      const x = cx + Math.sign(c) * Math.abs(c) ** square * (a + off), y = cy + Math.sign(s) * Math.abs(s) ** square * (b + off);
+      pts.push([x, y]);
+    }
+    const p = new Path2D();
+    const mid = (i) => [(pts[i][0] + pts[(i + 1) % n][0]) / 2, (pts[i][1] + pts[(i + 1) % n][1]) / 2];
+    p.moveTo(...mid(n - 1));
+    for (let i = 0; i < n; i++) p.quadraticCurveTo(pts[i][0], pts[i][1], ...mid(i));
+    p.closePath();
+    return p;
+  }
+
+  /** Mud: a wobbly patch whose edge stays within a few units of the slowing rect. */
   function drawMud(g, m) {
-    const path = () => roundRect(g, m.x, m.y, m.w, m.h, 18);
-    const grad = g.createRadialGradient(m.x + m.w / 2, m.y + m.h / 2, 4, m.x + m.w / 2, m.y + m.h / 2, Math.max(m.w, m.h) * 0.7);
-    grad.addColorStop(0, '#4a3826');
-    grad.addColorStop(1, '#33281d');
-    g.fillStyle = grad;
-    path();
-    g.fill();
-    // Speckles and puddles.
-    g.save();
-    path();
-    g.clip();
     const rnd = rectRng(m);
-    for (let i = 0, n = Math.round(m.w * m.h / 120); i < n; i++) {
-      g.fillStyle = rnd() < 0.5 ? 'rgba(20,14,8,0.35)' : 'rgba(120,95,60,0.18)';
+    const cx = m.x + m.w / 2, cy = m.y + m.h / 2;
+    // Rounded corners fall at most ~16% inside the rect; robots are judged by their centre anyway.
+    const outline = blobPath(rnd, cx, cy, m.w / 2 + 2, m.h / 2 + 2, 7, 0.5);
+
+    // Dried rim, slightly wider than the wet mud, then the mud itself.
+    g.save();
+    g.lineJoin = 'round';
+    g.strokeStyle = 'rgba(105,85,55,0.55)';
+    g.lineWidth = 5;
+    g.stroke(outline);
+    const grad = g.createRadialGradient(cx, cy, 4, cx, cy, Math.max(m.w, m.h) * 0.65);
+    grad.addColorStop(0, '#3b2c1d');
+    grad.addColorStop(1, '#4d3a26');
+    g.fillStyle = grad;
+    g.fill(outline);
+
+    g.clip(outline);
+    // Darker wet hollows, each an irregular blob of its own.
+    for (let i = 0, n = 2 + Math.floor(rnd() * 3); i < n; i++) {
+      const w = m.w * (0.18 + rnd() * 0.22), h = m.h * (0.18 + rnd() * 0.22);
+      const x = m.x + w + rnd() * (m.w - 2 * w), y = m.y + h + rnd() * (m.h - 2 * h);
+      g.fillStyle = 'rgba(25,17,10,0.45)';
+      g.fill(blobPath(rnd, x, y, w, h, Math.min(w, h) * 0.3));
+    }
+    // Speckles: clods and grit.
+    for (let i = 0, n = Math.round(m.w * m.h / 110); i < n; i++) {
+      g.fillStyle = rnd() < 0.55 ? 'rgba(20,13,7,0.35)' : 'rgba(130,105,70,0.2)';
       g.beginPath();
-      g.arc(m.x + rnd() * m.w, m.y + rnd() * m.h, 1 + rnd() * 2.5, 0, Math.PI * 2);
+      g.arc(m.x + rnd() * m.w, m.y + rnd() * m.h, 0.8 + rnd() * 2.2, 0, Math.PI * 2);
       g.fill();
     }
-    for (let i = 0; i < 2; i++) {
-      g.fillStyle = 'rgba(110,130,150,0.10)';
+    // Glossy puddles catching the light, with a small highlight.
+    for (let i = 0, n = 1 + Math.floor(rnd() * 3); i < n; i++) {
+      const w = 6 + rnd() * 12, h = 3 + rnd() * 6;
+      const x = m.x + w + rnd() * (m.w - 2 * w), y = m.y + h + rnd() * (m.h - 2 * h);
+      g.fillStyle = 'rgba(120,140,160,0.16)';
+      g.fill(blobPath(rnd, x, y, w, h, Math.min(w, h) * 0.3));
+      g.fillStyle = 'rgba(220,230,240,0.18)';
       g.beginPath();
-      g.ellipse(m.x + (0.2 + rnd() * 0.6) * m.w, m.y + (0.2 + rnd() * 0.6) * m.h, 8 + rnd() * 10, 4 + rnd() * 5, 0, 0, Math.PI * 2);
+      g.ellipse(x - w * 0.35, y - h * 0.3, w * 0.25, h * 0.2, 0, 0, Math.PI * 2);
       g.fill();
     }
     g.restore();
-    g.strokeStyle = 'rgba(15,10,5,0.6)';
-    g.lineWidth = 1.5;
-    path();
-    g.stroke();
+    // Soft inner edge where the mud meets the rim.
+    g.strokeStyle = 'rgba(20,13,7,0.5)';
+    g.lineWidth = 1.2;
+    g.stroke(outline);
   }
 
   const CANOPY = [
