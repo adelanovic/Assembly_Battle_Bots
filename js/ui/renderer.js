@@ -134,18 +134,7 @@
       g.setTransform(this.scale, 0, 0, this.scale, 0, 0);
       const W = C.ARENA_W, H = C.ARENA_H;
 
-      g.fillStyle = '#151a22';
-      g.fillRect(0, 0, W, H);
-
-      // grid: fine every 50, stronger every 100
-      g.lineWidth = 1;
-      for (const [step, color] of [[50, '#1b212b'], [100, '#212834']]) {
-        g.strokeStyle = color;
-        g.beginPath();
-        for (let x = step; x < W; x += step) { g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, H); }
-        for (let y = step; y < H; y += step) { g.moveTo(0, y + 0.5); g.lineTo(W, y + 0.5); }
-        g.stroke();
-      }
+      drawGround(g, world, W, H);
 
       // vignette: darker toward the edges so the centre reads as the stage
       const v = g.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, W * 0.62);
@@ -507,6 +496,79 @@
     return () => { h = Math.imul(h ^ (h >>> 13), 0x5BD1E995); h ^= h >>> 15; return (h >>> 0) / 4294967296; };
   }
 
+  /**
+   * Cosmetic grass covering the open ground. Everything here is flat and low
+   * contrast so it never reads as an obstacle or mud; decorations skip the
+   * terrain rects. Varies with the seed, fixed for a given world.
+   */
+  function drawGround(g, world, W, H) {
+    const seed = world ? world.seed : 1;
+    const rnd = rectRng({ x: seed, y: 7, w: 13, h: 29 });
+    const blocked = world ? world.obstacles.concat(world.mud) : [];
+    const clear = (x, y, pad) => blocked.every((o) => x < o.x - pad || x > o.x + o.w + pad || y < o.y - pad || y > o.y + o.h + pad);
+
+    g.fillStyle = '#16231a';
+    g.fillRect(0, 0, W, H);
+    // Mowing stripes, 50 units wide, aligned with the old grid.
+    for (let x = 0; x < W; x += 100) { g.fillStyle = 'rgba(255,255,255,0.018)'; g.fillRect(x, 0, 50, H); }
+    // Large soft blotches of lighter and darker grass.
+    for (let i = 0; i < 26; i++) {
+      const x = rnd() * W, y = rnd() * H, r = 40 + rnd() * 90;
+      const grad = g.createRadialGradient(x, y, 0, x, y, r);
+      grad.addColorStop(0, rnd() < 0.5 ? 'rgba(70,110,60,0.10)' : 'rgba(5,15,8,0.16)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad;
+      g.fillRect(x - r, y - r, 2 * r, 2 * r);
+    }
+    // Faint grid, so positions are still easy to judge.
+    g.lineWidth = 1;
+    for (const [step, color] of [[50, 'rgba(160,200,150,0.035)'], [100, 'rgba(160,200,150,0.06)']]) {
+      g.strokeStyle = color;
+      g.beginPath();
+      for (let x = step; x < W; x += step) { g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, H); }
+      for (let y = step; y < H; y += step) { g.moveTo(0, y + 0.5); g.lineTo(W, y + 0.5); }
+      g.stroke();
+    }
+    // Grass tufts: small fans of blades.
+    g.lineCap = 'round';
+    for (let i = 0; i < 520; i++) {
+      const x = rnd() * W, y = rnd() * H;
+      if (!clear(x, y, 4)) continue;
+      g.strokeStyle = rnd() < 0.6 ? 'rgba(90,140,70,0.32)' : 'rgba(40,70,35,0.45)';
+      g.lineWidth = 1;
+      g.beginPath();
+      for (let k = 0, n = 3 + Math.floor(rnd() * 3); k < n; k++) {
+        const a = -Math.PI / 2 + (rnd() - 0.5) * 1.3, len = 3 + rnd() * 4;
+        g.moveTo(x, y);
+        g.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+      }
+      g.stroke();
+    }
+    g.lineCap = 'butt';
+    // Pebbles: tiny, flat and dim.
+    for (let i = 0; i < 70; i++) {
+      const x = rnd() * W, y = rnd() * H;
+      if (!clear(x, y, 3)) continue;
+      g.fillStyle = 'rgba(150,155,145,0.16)';
+      g.beginPath();
+      g.ellipse(x, y, 1 + rnd() * 1.8, 0.8 + rnd() * 1.2, rnd() * Math.PI, 0, Math.PI * 2);
+      g.fill();
+    }
+    // A few small flower clusters.
+    const petals = ['rgba(235,225,150,0.55)', 'rgba(230,230,240,0.5)', 'rgba(190,160,230,0.5)'];
+    for (let i = 0; i < 14; i++) {
+      const cx = rnd() * W, cy = rnd() * H, color = petals[Math.floor(rnd() * petals.length)];
+      for (let k = 0, n = 3 + Math.floor(rnd() * 4); k < n; k++) {
+        const x = cx + (rnd() - 0.5) * 18, y = cy + (rnd() - 0.5) * 14;
+        if (!clear(x, y, 3)) continue;
+        g.fillStyle = color;
+        g.beginPath();
+        g.arc(x, y, 0.9 + rnd() * 0.7, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+  }
+
   function drawMud(g, m) {
     const path = () => roundRect(g, m.x, m.y, m.w, m.h, 18);
     const grad = g.createRadialGradient(m.x + m.w / 2, m.y + m.h / 2, 4, m.x + m.w / 2, m.y + m.h / 2, Math.max(m.w, m.h) * 0.7);
@@ -556,7 +618,7 @@
     g.fillStyle = 'rgba(0,0,0,0.38)';
     roundRect(g, o.x + 4, o.y + 6, o.w, o.h, 8);
     g.fill();
-    g.fillStyle = '#17241a';
+    g.fillStyle = '#0a110c';
     roundRect(g, o.x, o.y, o.w, o.h, 6);
     g.fill();
 
