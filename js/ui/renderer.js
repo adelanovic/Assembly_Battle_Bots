@@ -275,16 +275,20 @@
 
       // treads, with tread marks that scroll as the robot drives
       this.drawDrive(ctx, r);
+      this.drawDriveMud(ctx, r, f);
 
       // hull
       const grad = ctx.createLinearGradient(0, HULL.y, 0, HULL.y + HULL.h);
-      grad.addColorStop(0, shade(r.color, 0.25));
-      grad.addColorStop(1, shade(r.color, -0.25));
+      const paint = weathered(r.color);
+      grad.addColorStop(0, shade(paint, 0.22));
+      grad.addColorStop(1, shade(paint, -0.28));
       ctx.fillStyle = grad;
       this.hullPath(ctx, r);
       ctx.fill();
+      this.drawWear(ctx, r, f);
       ctx.strokeStyle = '#0b0d12';
       ctx.lineWidth = 1.5;
+      this.hullPath(ctx, r);
       ctx.stroke();
 
       // Headlights mark the front for every hull shape.
@@ -333,6 +337,9 @@
       ctx.beginPath(); ctx.arc(0, 0, 6, 0, TAU); ctx.fill(); ctx.stroke();
       ctx.fillStyle = 'rgba(11,13,18,0.55)'; // hatch
       ctx.beginPath(); ctx.arc(-1, 0, 1.8, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(30,25,20,0.45)'; // scuff
+      ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.arc(0, 0, 4.2, 0.6 + (r.id % 3), 1.5 + (r.id % 3)); ctx.stroke();
 
       ctx.restore();
     }
@@ -349,6 +356,82 @@
         points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
         ctx.closePath();
       } else roundRect(ctx, HULL.x, HULL.y, HULL.w, HULL.h, HULL.r);
+    }
+
+    /**
+     * Weathering on the hull, seeded from the robot's name so each robot
+     * keeps the same scratches and chips: rear grime, panel seams, rivets,
+     * scratches, chipped paint, a rust streak and any mud it picked up.
+     */
+    drawWear(ctx, r, f) {
+      const rnd = BB.geo.makeRng(nameSeed(r.name));
+      ctx.save();
+      this.hullPath(ctx, r);
+      ctx.clip();
+      const grime = ctx.createLinearGradient(-14, 0, 4, 0);
+      grime.addColorStop(0, 'rgba(35,26,16,0.45)');
+      grime.addColorStop(1, 'rgba(35,26,16,0)');
+      ctx.fillStyle = grime;
+      ctx.fillRect(-15, -15, 30, 30);
+      // Panel seams with rivets.
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(-4, -12); ctx.lineTo(-4, 12); ctx.moveTo(-4, 0); ctx.lineTo(-13, 0); ctx.stroke();
+      for (const [x, y] of [[-6, -6], [-6, 6], [-10, -3], [-10, 3]]) {
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.beginPath(); ctx.arc(x, y, 0.7, 0, TAU); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.beginPath(); ctx.arc(x - 0.3, y - 0.3, 0.35, 0, TAU); ctx.fill();
+      }
+      // Rust streak running back from one rivet.
+      const ry = rnd() < 0.5 ? -6 : 6;
+      const rust = ctx.createLinearGradient(-6, 0, -13, 0);
+      rust.addColorStop(0, 'rgba(130,65,25,0.45)');
+      rust.addColorStop(1, 'rgba(130,65,25,0)');
+      ctx.fillStyle = rust;
+      ctx.fillRect(-13, ry - 0.8, 7, 1.6);
+      // Scratches.
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      for (let i = 0; i < 4; i++) {
+        const x = -10 + rnd() * 20, y = -9 + rnd() * 18, a = rnd() * Math.PI, len = 2.5 + rnd() * 4;
+        ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+      }
+      ctx.stroke();
+      // Chipped paint showing bare metal.
+      for (let i = 0; i < 4; i++) {
+        const x = -11 + rnd() * 22, y = -10 + rnd() * 20, rad = 0.7 + rnd() * 0.9;
+        ctx.fillStyle = 'rgba(70,72,78,0.7)';
+        ctx.beginPath(); ctx.ellipse(x, y, rad * 1.3, rad, rnd() * Math.PI, 0, TAU); ctx.fill();
+        ctx.fillStyle = 'rgba(200,200,205,0.25)';
+        ctx.beginPath(); ctx.arc(x - rad * 0.4, y - rad * 0.4, rad * 0.4, 0, TAU); ctx.fill();
+      }
+      // Mud splatter, mostly low on the hull and towards the back.
+      if (f.mud > 0.03) {
+        ctx.fillStyle = 'rgba(84,64,42,' + (0.6 * Math.min(1, f.mud * 1.5)).toFixed(3) + ')';
+        const n = Math.ceil(9 * f.mud);
+        for (let i = 0; i < 9; i++) {
+          const x = -13 + rnd() * 18, y = (rnd() < 0.5 ? -1 : 1) * (6 + rnd() * 6), rad = 0.8 + rnd() * 1.8;
+          if (i >= n) continue;
+          ctx.beginPath(); ctx.arc(x, y, rad, 0, TAU); ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+
+    /** Mud caked on the treads or wheels after driving through mud. */
+    drawDriveMud(ctx, r, f) {
+      if (!(f.mud > 0.03) || (r.appearance && r.appearance.drive === 'hover')) return;
+      const rnd = BB.geo.makeRng(nameSeed(r.name) ^ 0x5EED);
+      ctx.fillStyle = 'rgba(80,60,38,' + (0.85 * Math.min(1, f.mud * 1.5)).toFixed(3) + ')';
+      const n = Math.ceil(16 * f.mud);
+      for (let i = 0; i < 16; i++) {
+        const side = i % 2 ? 1 : -1;
+        const x = TREAD.x + rnd() * TREAD.len, y = side * (TREAD.inner + rnd() * (TREAD.outer - TREAD.inner)), rad = 0.9 + rnd() * 1.6;
+        if (i >= n) continue;
+        ctx.beginPath(); ctx.arc(x, y, rad, 0, TAU); ctx.fill();
+      }
     }
 
     drawDrive(ctx, r, wreck = false) {
@@ -398,6 +481,7 @@
         ctx.fill(); ctx.stroke();
         ctx.fillStyle = wreck ? '#3a3f49' : '#8e97a6';
         ctx.fillRect(end - 4, y - width / 2 - 0.5, 4, width + 1);
+        if (!wreck) { ctx.fillStyle = 'rgba(20,15,10,0.6)'; ctx.fillRect(end - 2.5, y - width / 2 - 0.5, 2.5, width + 1); }
       }
     }
 
@@ -513,9 +597,12 @@
     updateMud(world) {
       for (const r of world.robots) {
         const f = this.fx(r.id);
-        const moved = f.px === undefined ? 0 : Math.hypot(r.x - f.px, r.y - f.py);
+        // Capped so a respawn or teleport never counts as a huge move.
+        const moved = f.px === undefined ? 0 : Math.min(6, Math.hypot(r.x - f.px, r.y - f.py));
         f.px = r.x; f.py = r.y;
+        f.mud = (f.mud || 0) * 0.9985;
         if (!r.alive || !world.inMud(r)) { f.trackX = undefined; continue; }
+        f.mud = Math.min(1, f.mud + moved * 0.015);
         if (f.trackX === undefined) { f.trackX = r.x; f.trackY = r.y; }
         if (Math.hypot(r.x - f.trackX, r.y - f.trackY) >= 3) {
           this.tracks.push({ x1: f.trackX, y1: f.trackY, x2: r.x, y2: r.y, heading: r.heading,
@@ -1189,6 +1276,19 @@
   function hexA(hex, a) {
     const [r, g, b] = rgb(hex);
     return `rgba(${r},${g},${b},${a})`;
+  }
+
+  /** Sun-faded paint: the team colour mixed 15% toward dusty grey, as hex. */
+  function weathered(hex) {
+    const dust = [119, 115, 106];
+    return '#' + rgb(hex).map((v, i) => Math.round(v * 0.85 + dust[i] * 0.15).toString(16).padStart(2, '0')).join('');
+  }
+
+  /** Stable 32-bit seed from a robot's name, so its wear looks the same every match. */
+  function nameSeed(name) {
+    let h = 2166136261;
+    for (const ch of String(name)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+    return h >>> 0;
   }
 
   /** Lighten (amt > 0) or darken (amt < 0) a hex colour. */
