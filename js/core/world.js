@@ -560,7 +560,8 @@
         px: r.x, py: r.y,
         vx: dx * C.BULLET_SPEED, vy: dy * C.BULLET_SPEED,
       });
-      this.emit({ type: 'fire', x: r.x + dx * muzzle, y: r.y + dy * muzzle, robot: r.id });
+      // The renderer drains events after several ticks, so they carry the state at the time of the shot.
+      this.emit({ type: 'fire', x: r.x + dx * muzzle, y: r.y + dy * muzzle, robot: r.id, rx: r.x, ry: r.y, angle: r.turret });
     }
 
     moveProjectiles() {
@@ -582,7 +583,7 @@
               const shooter = this.robots[p.owner];
               shooter.stats.hits++;
               this.damage(r, C.BULLET_DAMAGE, shooter, 'shot');
-              this.emit({ type: 'hit', x: p.x, y: p.y, color: r.color, robot: r.id });
+              this.emit({ type: 'hit', x: p.x, y: p.y, color: r.color, robot: r.id, rx: r.x, ry: r.y, heading: r.heading });
               continue outer;
             }
           }

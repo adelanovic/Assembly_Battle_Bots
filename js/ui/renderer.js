@@ -69,6 +69,7 @@
       this.tracks = [];
       this.casings = [];
       this.decals = null;
+      this.lastTick = undefined;
     }
 
     fx(id) {
@@ -166,20 +167,17 @@
 
     /** A shot left the barrel: a puff of smoke and a casing kicked out of the turret's side. */
     shotFired(e) {
-      const r = this.world && this.world.robots[e.robot];
-      if (!r) return;
-      const dx = Math.cos(r.turret * DEG), dy = Math.sin(r.turret * DEG);
+      const dx = Math.cos(e.angle * DEG), dy = Math.sin(e.angle * DEG);
       for (let i = 0; i < 2; i++) {
-        this.particles.push({
-          kind: 'smoke', x: e.x + dx * 3, y: e.y + dy * 3,
-          vx: dx * (0.4 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.3, vy: dy * (0.4 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.3,
-          size: 2 + Math.random() * 2, life: 26, max: 26,
-        });
+        this.puff(e.x + dx * 3, e.y + dy * 3,
+          dx * (0.4 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.3, dy * (0.4 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.3,
+          2 + Math.random() * 2, 26);
       }
-      const side = Math.random() < 0.5 ? -1 : 1, v = 1.2 + Math.random() * 1.2;
+      // Starts at the hull edge and travels 13-23 units, so it comes to rest clear of the robot.
+      const side = Math.random() < 0.5 ? -1 : 1, v = 1.6 + Math.random() * 1.2;
       this.casings.push({
-        x: r.x - dy * side * 5, y: r.y + dx * side * 5,
-        vx: -dy * side * v - dx * 0.4, vy: dx * side * v - dy * 0.4,
+        x: e.rx - dy * side * 9, y: e.ry + dx * side * 9,
+        vx: -dy * side * v - dx * 0.3, vy: dx * side * v - dy * 0.3,
         angle: Math.random() * TAU, spin: (Math.random() - 0.5) * 0.8, life: 150,
       });
       if (this.casings.length > MAX_CASINGS) this.casings.shift();
@@ -187,10 +185,8 @@
 
     /** Remember where a shot struck a robot, in hull coordinates so the dent turns with it. */
     addDent(e) {
-      const r = this.world && this.world.robots[e.robot];
-      if (!r) return;
-      const c = Math.cos(-r.heading * DEG), sn = Math.sin(-r.heading * DEG);
-      let lx = (e.x - r.x) * c - (e.y - r.y) * sn, ly = (e.x - r.x) * sn + (e.y - r.y) * c;
+      const c = Math.cos(-e.heading * DEG), sn = Math.sin(-e.heading * DEG);
+      let lx = (e.x - e.rx) * c - (e.y - e.ry) * sn, ly = (e.x - e.rx) * sn + (e.y - e.ry) * c;
       const d = Math.hypot(lx, ly), max = 9;
       if (d > max) { lx *= max / d; ly *= max / d; }
       const f = this.fx(e.robot);
@@ -199,21 +195,27 @@
       if (f.dents.length > MAX_DENTS) f.dents.shift();
     }
 
-    dust(x, y, color) {
-      this.particles.push({
-        kind: 'dust', x: x + (Math.random() - 0.5) * 4, y: y + (Math.random() - 0.5) * 4,
-        vx: (Math.random() - 0.5) * 0.8, vy: (Math.random() - 0.5) * 0.8,
-        size: 2 + Math.random() * 2, life: 24, max: 24, color,
-      });
+    /** One soft particle that drifts and grows: smoke, dust or a muzzle puff. */
+    puff(x, y, vx, vy, size, life, kind = 'smoke', color) {
+      this.particles.push({ kind, x, y, vx, vy, size, life, max: life, color });
     }
 
-    /** Spent casings skid to a stop and fade out after a few seconds. */
-    drawCasings(ctx) {
+    dust(x, y, color) {
+      this.puff(x + (Math.random() - 0.5) * 4, y + (Math.random() - 0.5) * 4,
+        (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8, 2 + Math.random() * 2, 24, 'dust', color);
+    }
+
+    /** Spent casings skid to a stop and fade out; they age by simulated ticks, so they freeze while paused. */
+    drawCasings(ctx, ticks) {
       if (!this.casings.length) return;
       const keep = [];
       for (const c of this.casings) {
-        c.x += c.vx; c.y += c.vy; c.vx *= 0.88; c.vy *= 0.88; c.angle += c.spin; c.spin *= 0.88;
-        if (--c.life <= 0) continue;
+        for (let i = 0; i < ticks && (c.vx || c.vy); i++) {
+          c.x += c.vx; c.y += c.vy; c.vx *= 0.88; c.vy *= 0.88; c.angle += c.spin; c.spin *= 0.88;
+          if (Math.abs(c.vx) + Math.abs(c.vy) < 0.01) c.vx = c.vy = 0;
+        }
+        c.life -= ticks;
+        if (c.life <= 0) continue;
         keep.push(c);
         ctx.save();
         ctx.globalAlpha = 0.75 * Math.min(1, c.life / 40);
@@ -231,11 +233,8 @@
     }
 
     smoke(x, y, spread = 0.4) {
-      this.particles.push({
-        kind: 'smoke', x: x + (Math.random() - 0.5) * 6, y: y + (Math.random() - 0.5) * 6,
-        vx: (Math.random() - 0.5) * spread, vy: (Math.random() - 0.5) * spread - 0.15,
-        size: 3 + Math.random() * 3, life: 40, max: 40,
-      });
+      this.puff(x + (Math.random() - 0.5) * 6, y + (Math.random() - 0.5) * 6,
+        (Math.random() - 0.5) * spread, (Math.random() - 0.5) * spread - 0.15, 3 + Math.random() * 3, 40);
     }
 
     // ------------------------------------------------------------ frame
@@ -250,13 +249,16 @@
       ctx.drawImage(this.decals, 0, 0, C.ARENA_W, C.ARENA_H);
 
       const now = performance.now();
+      // Ticks simulated since the last frame: 0 while paused, so tick-based effects freeze.
+      const ticks = this.lastTick === undefined ? 0 : Math.min(150, Math.max(0, world.tick - this.lastTick));
+      this.lastTick = world.tick;
       this.updateMud(world);
       this.drawTracks(ctx, world.tick);
       this.drawFires(ctx, now);
-      this.drawCasings(ctx);
+      this.drawCasings(ctx, ticks);
       for (const r of world.robots) if (!r.alive) this.drawWreck(ctx, r);
       if (this.showScans) for (const r of world.robots) if (r.alive) this.drawScan(ctx, r, world.tick);
-      for (const p of world.projectiles) this.drawProjectile(ctx, p);
+      for (const p of world.projectiles) this.drawProjectile(ctx, p, ticks > 0);
       for (const r of world.robots) if (r.alive) this.drawRobot(ctx, r, r.entryId === selectedEntryId, now);
       this.drawFireLight(ctx, world, now);
       this.emitAmbientSmoke(world);
@@ -502,11 +504,9 @@
       }
       // Dents and scorches where shots struck.
       for (const d of f.dents || []) {
-        const sc = ctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, d.r * 2.4);
-        sc.addColorStop(0, 'rgba(10,8,6,0.55)');
-        sc.addColorStop(1, 'rgba(10,8,6,0)');
-        ctx.fillStyle = sc;
+        ctx.fillStyle = 'rgba(10,8,6,0.2)'; // scorch fading outward
         ctx.beginPath(); ctx.arc(d.x, d.y, d.r * 2.4, 0, TAU); ctx.fill();
+        ctx.beginPath(); ctx.arc(d.x, d.y, d.r * 1.6, 0, TAU); ctx.fill();
         ctx.fillStyle = 'rgba(20,18,16,0.85)';
         ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, TAU); ctx.fill();
         ctx.strokeStyle = 'rgba(220,220,225,0.35)'; // lit lip of the dent
@@ -806,8 +806,8 @@
       }
     }
 
-    /** A hot shell with a team-coloured tracer streak, trailing thin smoke. */
-    drawProjectile(ctx, p) {
+    /** A hot shell with a team-coloured tracer streak, trailing thin smoke while the match runs. */
+    drawProjectile(ctx, p, moving = true) {
       const speed = Math.hypot(p.vx, p.vy) || 1;
       const dx = p.vx / speed, dy = p.vy / speed;
       ctx.save();
@@ -820,25 +820,24 @@
       ctx.lineWidth = 2.2;
       ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(p.x, p.y); ctx.stroke();
-      const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 7);
-      glow.addColorStop(0, 'rgba(255,170,70,0.4)');
-      glow.addColorStop(1, 'rgba(255,120,40,0)');
-      ctx.fillStyle = glow;
+      ctx.fillStyle = 'rgba(255,140,50,0.16)';
       ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(255,180,90,0.28)';
+      ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, TAU); ctx.fill();
       ctx.restore();
       // Shell body: orange-hot, white at the nose.
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(Math.atan2(dy, dx));
-      const body = ctx.createLinearGradient(-3.5, 0, 3, 0);
-      body.addColorStop(0, '#ff7a2f');
-      body.addColorStop(0.6, '#ffc46b');
-      body.addColorStop(1, '#fffbe8');
-      ctx.fillStyle = body;
+      ctx.fillStyle = '#ff8a3a';
       ctx.beginPath(); ctx.ellipse(0, 0, 3.5, 1.3, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#ffd08a';
+      ctx.beginPath(); ctx.ellipse(1, 0, 2.2, 0.95, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#fffbe8';
+      ctx.beginPath(); ctx.ellipse(2.4, 0, 1, 0.65, 0, 0, TAU); ctx.fill();
       ctx.restore();
       // Thin smoke left behind, only when there is spare particle budget.
-      if (this.particles.length < MAX_PARTICLES * 0.7 && Math.random() < 0.55) {
+      if (moving && this.particles.length < MAX_PARTICLES * 0.7 && Math.random() < 0.55) {
         this.particles.push({
           kind: 'trail', x: p.x - dx * 6, y: p.y - dy * 6,
           vx: (Math.random() - 0.5) * 0.15, vy: (Math.random() - 0.5) * 0.15 - 0.03,

@@ -799,6 +799,57 @@ test('all appearance combinations render normal, damaged, flashing and wreck sta
   assert.ok(calls > 1000);
 });
 
+test('renderer effects use event-time state, land clear of the hull and freeze while paused', () => {
+  const renderingBB = { ...BB };
+  for (const file of ['terrain.js', 'renderer.js']) {
+    scriptVm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/ui', file), 'utf8'), { BB: renderingBB, performance });
+  }
+  const renderer = Object.create(renderingBB.Renderer.prototype);
+  Object.assign(renderer, { robotFx: new Map(), particles: [], scars: [], ignited: [], tracks: [], casings: [], decals: null });
+  const context = new Proxy({}, { get(target, key) {
+    if (String(key).startsWith('create')) return () => ({ addColorStop() {} });
+    return (...args) => { for (const value of args) if (typeof value === 'number') assert.ok(Number.isFinite(value)); };
+  } });
+  const world = new BB.World({ entries: [compile('A\nWAIT', 0), compile('B\nWAIT', 1)], arena: 'classic' });
+  renderer.world = world;
+  const [a, b] = world.robots;
+  // Events carry the state at the time of the shot; by the time they are drained both robots have moved on.
+  Object.assign(a, { x: 600, y: 500, turret: 135 });
+  Object.assign(b, { x: 700, y: 100, heading: 0 });
+  const tree = BB.World.DEFAULT_OBSTACLES[0];
+  renderer.addEvents([
+    { type: 'fire', x: 120, y: 100, robot: 0, rx: 100, ry: 100, angle: 0 },
+    { type: 'hit', x: 300, y: 286, robot: 1, rx: 300, ry: 300, heading: 90, color: '#ffffff' },
+    { type: 'spark', x: tree.x + tree.w / 2, y: tree.y + tree.h / 2 },
+    { type: 'spark', x: 0, y: 300 },
+    { type: 'explode', x: 400, y: 500, color: '#ffffff' },
+    { type: 'bump', x: 10, y: 10 },
+  ]);
+  const casing = renderer.casings[0];
+  assert.ok(Math.abs(Math.hypot(casing.x - 100, casing.y - 100) - 9) < 1e-9, 'casing ejects from the robot where it fired');
+  const dent = renderer.fx(1).dents[0];
+  assert.ok(Math.abs(dent.x + 9) < 1e-9 && Math.abs(dent.y) < 1e-9, 'a hit from behind dents the rear of the hull');
+  const kinds = new Set(renderer.particles.map((p) => p.kind));
+  for (const kind of ['smoke', 'chip', 'dust', 'spark', 'flash', 'ring']) assert.ok(kinds.has(kind), `missing ${kind} particles`);
+  assert.deepStrictEqual(renderer.scars.map((s) => s.kind).sort(), ['char', 'crater']);
+
+  // Paused (no ticks): shells leave no smoke and casings stay put.
+  const shell = { x: 200, y: 200, vx: 10, vy: 0, color: '#ff0000' };
+  const before = renderer.particles.length;
+  for (let i = 0; i < 50; i++) renderer.drawProjectile(context, shell, false);
+  assert.strictEqual(renderer.particles.length, before);
+  const at = { x: casing.x, y: casing.y, life: casing.life };
+  renderer.drawCasings(context, 0);
+  assert.deepStrictEqual({ x: casing.x, y: casing.y, life: casing.life }, at);
+  renderer.drawCasings(context, 60);
+  assert.ok(Math.hypot(casing.x - 100, casing.y - 100) > BB.CONFIG.ROBOT_RADIUS + 2, 'casing comes to rest clear of the hull');
+  assert.strictEqual(casing.life, at.life - 60);
+  for (let i = 0; i < 50; i++) renderer.drawProjectile(context, shell, true);
+  assert.ok(renderer.particles.some((p) => p.kind === 'trail'));
+  renderer.drawParticles(context);
+  renderer.drawRobot(context, b, false, 1000);
+});
+
 test('Stacker balances nested calls and register saves across CPU budget boundaries', () => {
   const example = BB.EXAMPLES.find((ex) => ex.file === 'stacker.asm');
   const compiled = BB.assemble(example.source);
