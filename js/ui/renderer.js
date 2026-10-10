@@ -501,29 +501,25 @@
 
   // ------------------------------------------------------------ helpers
 
+  /** Fixed pseudo-random sequence per rect, so decorations look the same on every redraw. */
+  function rectRng(o) {
+    let h = (o.x * 73856093) ^ (o.y * 19349663) ^ (o.w * 83492791) ^ (o.h * 2654435761);
+    return () => { h = Math.imul(h ^ (h >>> 13), 0x5BD1E995); h ^= h >>> 15; return (h >>> 0) / 4294967296; };
+  }
+
   function drawMud(g, m) {
-    const rad = Math.min(18, m.w / 2, m.h / 2);
-    const path = () => {
-      g.beginPath();
-      g.moveTo(m.x + rad, m.y);
-      g.arcTo(m.x + m.w, m.y, m.x + m.w, m.y + m.h, rad);
-      g.arcTo(m.x + m.w, m.y + m.h, m.x, m.y + m.h, rad);
-      g.arcTo(m.x, m.y + m.h, m.x, m.y, rad);
-      g.arcTo(m.x, m.y, m.x + m.w, m.y, rad);
-      g.closePath();
-    };
+    const path = () => roundRect(g, m.x, m.y, m.w, m.h, 18);
     const grad = g.createRadialGradient(m.x + m.w / 2, m.y + m.h / 2, 4, m.x + m.w / 2, m.y + m.h / 2, Math.max(m.w, m.h) * 0.7);
     grad.addColorStop(0, '#4a3826');
     grad.addColorStop(1, '#33281d');
     g.fillStyle = grad;
     path();
     g.fill();
-    // Speckles and puddles from a fixed hash of the patch, so the floor looks the same every redraw.
+    // Speckles and puddles.
     g.save();
     path();
     g.clip();
-    let h = (m.x * 73856093) ^ (m.y * 19349663) ^ (m.w * 83492791);
-    const rnd = () => { h = Math.imul(h ^ (h >>> 13), 0x5BD1E995); h ^= h >>> 15; return (h >>> 0) / 4294967296; };
+    const rnd = rectRng(m);
     for (let i = 0, n = Math.round(m.w * m.h / 120); i < n; i++) {
       g.fillStyle = rnd() < 0.5 ? 'rgba(20,14,8,0.35)' : 'rgba(120,95,60,0.18)';
       g.beginPath();
@@ -543,30 +539,77 @@
     g.stroke();
   }
 
+  const CANOPY = [
+    ['#1f4a2a', '#2f6b38', '#4c8f45'],   // pine green
+    ['#24502c', '#3a7a3c', '#5c9e4c'],   // leafy green
+    ['#2a4a26', '#456d2f', '#6b8f3c'],   // olive
+  ];
+
+  /**
+   * Obstacles are drawn as a stand of trees seen from above. The dark
+   * undergrowth fills the exact collision rect, so every solid pixel reads
+   * as blocked; canopies overhang it by only a couple of units.
+   */
   function drawObstacle(g, o) {
-    // drop shadow
-    g.fillStyle = 'rgba(0,0,0,0.4)';
-    g.fillRect(o.x + 4, o.y + 5, o.w, o.h);
-    // body
-    const grad = g.createLinearGradient(o.x, o.y, o.x + o.w * 0.4, o.y + o.h);
-    grad.addColorStop(0, '#4a5466');
-    grad.addColorStop(1, '#323947');
-    g.fillStyle = grad;
-    g.fillRect(o.x, o.y, o.w, o.h);
-    // bevel: lit top/left, shaded bottom/right
-    g.lineWidth = 2;
-    g.strokeStyle = '#66728a';
-    g.beginPath();
-    g.moveTo(o.x + 1, o.y + o.h - 1); g.lineTo(o.x + 1, o.y + 1); g.lineTo(o.x + o.w - 1, o.y + 1);
-    g.stroke();
-    g.strokeStyle = '#252b36';
-    g.beginPath();
-    g.moveTo(o.x + o.w - 1, o.y + 1); g.lineTo(o.x + o.w - 1, o.y + o.h - 1); g.lineTo(o.x + 1, o.y + o.h - 1);
-    g.stroke();
-    // outline
-    g.strokeStyle = '#0e1117';
-    g.lineWidth = 1.5;
-    g.strokeRect(o.x - 0.5, o.y - 0.5, o.w + 1, o.h + 1);
+    const rnd = rectRng(o);
+    // Ground shadow cast down-right, then undergrowth on the collision footprint.
+    g.fillStyle = 'rgba(0,0,0,0.38)';
+    roundRect(g, o.x + 4, o.y + 6, o.w, o.h, 8);
+    g.fill();
+    g.fillStyle = '#17241a';
+    roundRect(g, o.x, o.y, o.w, o.h, 6);
+    g.fill();
+
+    // Pack canopies on a jittered grid that covers the rect.
+    const base = Math.max(11, Math.min(22, Math.min(o.w, o.h) / 2 + 2));
+    const nx = Math.max(1, Math.round(o.w / (base * 1.45)));
+    const ny = Math.max(1, Math.round(o.h / (base * 1.45)));
+    const trees = [];
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+      const r = base * (0.82 + rnd() * 0.3);
+      const slack = 2; // max overhang beyond the collision rect
+      const cx = o.x + (i + 0.5) * o.w / nx + (rnd() - 0.5) * base * 0.5;
+      const cy = o.y + (j + 0.5) * o.h / ny + (rnd() - 0.5) * base * 0.5;
+      trees.push({
+        x: Math.max(o.x + r - slack, Math.min(o.x + o.w - r + slack, cx)),
+        y: Math.max(o.y + r - slack, Math.min(o.y + o.h - r + slack, cy)),
+        r: Math.min(r, o.w / 2 + slack, o.h / 2 + slack),
+        palette: CANOPY[Math.floor(rnd() * CANOPY.length)],
+        lobes: 5 + Math.floor(rnd() * 3),
+        spin: rnd() * Math.PI * 2,
+      });
+    }
+    trees.sort((a, b) => a.y - b.y); // lower trees overlap the ones behind them
+
+    for (const t of trees) {
+      // Soft shadow on the undergrowth.
+      g.fillStyle = 'rgba(0,0,0,0.35)';
+      g.beginPath();
+      g.arc(t.x + t.r * 0.18, t.y + t.r * 0.25, t.r, 0, Math.PI * 2);
+      g.fill();
+      // Lobed canopy: a ring of overlapping puffs around a core.
+      const [dark, mid, light] = t.palette;
+      const puffs = (scale, offX, offY, color) => {
+        g.fillStyle = color;
+        g.beginPath();
+        g.arc(t.x + offX, t.y + offY, t.r * 0.62 * scale, 0, Math.PI * 2);
+        for (let k = 0; k < t.lobes; k++) {
+          const a = t.spin + k * Math.PI * 2 / t.lobes;
+          const px = t.x + offX + Math.cos(a) * t.r * 0.5 * scale, py = t.y + offY + Math.sin(a) * t.r * 0.5 * scale;
+          g.moveTo(px + t.r * 0.45 * scale, py);
+          g.arc(px, py, t.r * 0.45 * scale, 0, Math.PI * 2);
+        }
+        g.fill();
+      };
+      puffs(1, 0, 0, dark);
+      puffs(0.8, -t.r * 0.08, -t.r * 0.1, mid);
+      puffs(0.45, -t.r * 0.22, -t.r * 0.26, light);
+      // Highlight glint.
+      g.fillStyle = 'rgba(255,255,220,0.10)';
+      g.beginPath();
+      g.arc(t.x - t.r * 0.3, t.y - t.r * 0.35, t.r * 0.18, 0, Math.PI * 2);
+      g.fill();
+    }
   }
 
   function roundRect(ctx, x, y, w, h, r) {
