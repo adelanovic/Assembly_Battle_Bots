@@ -175,7 +175,7 @@ For memory operands, `Rx` means one of `R0`..`R7`. Offsets are numeric literals 
 - After CPU execution, bodies and turrets turn, robots accelerate and move, collisions are resolved, requested shots are created, and projectiles move. A shot uses the turret angle after that tick's rotation. Repeating a movement or aiming command in a tick replaces its previous target; repeating `FIRE` requests at most one shot.
 - Desired speed and headings persist across ticks, `WAIT`, `HALT` and CPU faults. Absolute headings wrap into 0..359. `TURN` is relative to the current body heading, so repeated `TURN 90` commands do not add 90 degrees to the previous desired target.
 - At most one projectile is fired every 15 ticks. A shot sets the cooldown to 15, then the world decrements it to 14 before the next CPU tick. A `FIRE` request while cooling down is discarded rather than queued for a later tick.
-- `RAND` uses the shared match random-number generator. Replaying requires the same seed, arena, roster order, rules and programs; another robot's random calls can change later random results.
+- Each robot's `RAND` draws from its own random-number stream, seeded from the match seed and the robot's roster slot, so another robot's random calls never change your results. Replaying requires the same seed, arena, roster order, rules and programs.
 - Division/modulo by zero, an invalid memory address, stack underflow/overflow, a nonpositive `RAND` range, or a negative `SQRT` input faults the CPU and reports the instruction's source line.
 
 ## Instructions
@@ -206,7 +206,7 @@ For memory operands, `Rx` means one of `R0`..`R7`. Offsets are numeric literals 
 | `AND dst, src` | 1 | Bitwise AND | `AND R0, 1` |
 | `OR dst, src` | 1 | Bitwise OR | `OR R0, 4` |
 | `XOR dst, src` | 1 | Bitwise XOR | `XOR R0, R0` |
-| `RAND dst, src` | 1 | dst = random integer in 0..src-1 (src must be > 0). Deterministic per match seed. | `RAND R0, 360` |
+| `RAND dst, src` | 1 | dst = random integer in 0..src-1 (src must be > 0). Each robot has its own stream, deterministic per match seed and roster slot. | `RAND R0, 360` |
 
 ### Math
 

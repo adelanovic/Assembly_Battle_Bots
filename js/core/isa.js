@@ -64,7 +64,7 @@
     { op: 'AND', args: ['dst', 'src'], group: 'Arithmetic', summary: 'Bitwise AND', example: 'AND R0, 1' },
     { op: 'OR', args: ['dst', 'src'], group: 'Arithmetic', summary: 'Bitwise OR', example: 'OR R0, 4' },
     { op: 'XOR', args: ['dst', 'src'], group: 'Arithmetic', summary: 'Bitwise XOR', example: 'XOR R0, R0' },
-    { op: 'RAND', args: ['dst', 'src'], group: 'Arithmetic', summary: 'dst = random integer in 0..src-1 (src must be > 0). Deterministic per match seed.', example: 'RAND R0, 360' },
+    { op: 'RAND', args: ['dst', 'src'], group: 'Arithmetic', summary: 'dst = random integer in 0..src-1 (src must be > 0). Each robot has its own stream, deterministic per match seed and roster slot.', example: 'RAND R0, 360' },
 
     // ---- Math helpers (angles in degrees) ----
     { op: 'ATAN2', args: ['dst', 'src', 'src'], group: 'Math', summary: 'dst = angle of vector (dx = 3rd, dy = 2nd) in degrees 0..359, using the arena angle convention.', example: 'ATAN2 R0, R2, R1' },

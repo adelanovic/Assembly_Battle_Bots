@@ -562,6 +562,33 @@ test('iterative collision correction charges ram damage once and preserves frien
   }
 });
 
+test('RAND streams are per robot: an opponent\'s random calls never change yours', () => {
+  const draws = (opponentSrc, seed = 5) => {
+    const w = new BB.World({ entries: [compile('Me\nRAND R0, 1000000\nWAIT', 0), compile(opponentSrc, 1)], arena: 'open', seed });
+    const seen = [];
+    for (let t = 0; t < 20; t++) { w.step(); seen.push(w.robots[0].vm.regs[0]); }
+    return seen;
+  };
+  const quiet = draws('Quiet\nWAIT');
+  assert.deepStrictEqual(draws('Noisy\nRAND R1, 7\nRAND R1, 7\nRAND R1, 7\nWAIT'), quiet);
+  assert.deepStrictEqual(draws('Quiet\nWAIT'), quiet, 'same seed replays the same draws');
+  assert.notDeepStrictEqual(draws('Quiet\nWAIT', 6), quiet, 'a different seed gives different draws');
+  const w = new BB.World({ entries: [0, 1].map((id) => compile(`Twin\nRAND R0, 1000000\nWAIT`, id)), arena: 'open', seed: 5 });
+  w.step();
+  assert.notStrictEqual(w.robots[0].vm.regs[0], w.robots[1].vm.regs[0], 'roster slots get distinct streams');
+});
+
+test('wall damage from being shoved by an enemy is credited to the pusher', () => {
+  const entries = [0, 1].map((id) => compile(`Bot${id}\nWAIT`, id));
+  const w = new BB.World({ entries, arena: 'open' });
+  Object.assign(w.robots[0], { x: 17, y: 300, heading: 0, targetHeading: 0, speed: 4, targetSpeed: 4, health: 2 });
+  Object.assign(w.robots[1], { x: 40, y: 300, heading: 180, targetHeading: 180, speed: 5, targetSpeed: 5 });
+  w.step();
+  assert.strictEqual(w.robots[0].alive, false);
+  assert.strictEqual(w.robots[1].stats.damageDealt, 2, 'ram damage plus the wall damage');
+  assert.ok(w.log.some((l) => l.kind === 'death' && /by Bot1, shoved into a wall/.test(l.text)));
+});
+
 function playbackHarness(speedIndex = 3) {
   const app = uiHarness();
   app.world = new BB.World({ entries: [compile('Solo\nWAIT', 0)], arena: 'open' });

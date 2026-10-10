@@ -164,6 +164,9 @@
           ? TEAM_COLORS[t][teamCount[t]++ % TEAM_COLORS[t].length]
           : COLORS[i % COLORS.length];
         const r = new Robot(i, entry, color);
+        // Each robot draws RAND from its own stream, so one program's random
+        // calls never change the values another program sees.
+        r.rng = G.makeRng((seed ^ Math.imul(i + 1, 0x85EBCA6B)) >>> 0);
         const n = (used.get(entry.name) || 0) + 1;
         used.set(entry.name, n);
         if (n > 1) r.name = `${entry.name} (${n})`;
@@ -267,7 +270,7 @@
       const num = (v) => (Number.isFinite(v) ? v : 0);
       return {
         sense: (id) => world.sense(robot, id),
-        random: (n) => Math.floor(world.rng() * n),
+        random: (n) => Math.floor(robot.rng() * n),
         speed: (v) => { robot.targetSpeed = Math.max(C.MAX_REVERSE, Math.min(C.MAX_SPEED, num(v))); },
         turn: (v) => { robot.targetHeading = G.normAngle(robot.heading + num(v)); },
         head: (v) => { robot.targetHeading = G.normAngle(num(v)); },
@@ -420,7 +423,8 @@
       this.constrainRobot(r);
     }
 
-    constrainRobot(r) {
+    /** `pusher` is the enemy that shoved `r` here, credited for any wall damage. */
+    constrainRobot(r, pusher = null) {
       const R = C.ROBOT_RADIUS;
       let bumped = false;
       if (r.x < R) { r.x = R; bumped = true; }
@@ -433,7 +437,7 @@
       }
       if (bumped) {
         const dmg = Math.floor(Math.abs(r.speed) / 2);
-        if (dmg > 0) this.damage(r, dmg, null, 'wall');
+        if (dmg > 0) this.damage(r, dmg, pusher, 'wall');
         r.speed = 0;
       }
     }
@@ -441,6 +445,7 @@
     resolveRobotCollisions(list) {
       const R2 = C.ROBOT_RADIUS * 2;
       const contacts = new Set();
+      const pushers = new Map(); // robot -> last enemy that pushed it this tick
       // Alternate body separation and terrain correction until contacts settle.
       // Bound work for impossible crowds; allow only microscopic numerical slack.
       for (let pass = 0; pass < 512; pass++) {
@@ -457,6 +462,7 @@
             const push = (R2 - d + 1e-7) / 2;
             a.x -= nx * push; a.y -= ny * push;
             b.x += nx * push; b.y += ny * push;
+            if (this.isEnemy(a, b)) { pushers.set(a, b); pushers.set(b, a); }
             const contact = i * list.length + j;
             if (!contacts.has(contact)) {
               // Apply impact effects only once per pair, not on solver iterations.
@@ -473,7 +479,7 @@
             }
           }
         }
-        for (const r of list) if (r.alive) this.constrainRobot(r);
+        for (const r of list) if (r.alive) this.constrainRobot(r, pushers.get(r) || null);
         if (!separated) break;
       }
     }
@@ -534,7 +540,9 @@
       if (r.health <= 0) {
         r.alive = false;
         r.speed = r.targetSpeed = 0;
-        const by = source ? ` by ${source.name}` : cause === 'wall' ? ' by crashing into a wall' : '';
+        const by = source
+          ? (cause === 'wall' ? ` by ${source.name}, shoved into a wall` : ` by ${source.name}`)
+          : cause === 'wall' ? ' by crashing into a wall' : '';
         this.addLog(`${r.name} was destroyed${by}.`, 'death');
         this.emit({ type: 'explode', x: r.x, y: r.y, color: r.color });
       }
